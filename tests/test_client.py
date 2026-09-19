@@ -15,6 +15,7 @@ from seoulgokr.errors import (
     SeoulUpstreamError,
 )
 from seoulgokr.parsers.services import parse_parking_lots
+from seoulgokr.redaction import redact_text
 from seoulgokr.transport import AsyncSeoulTransport
 
 
@@ -27,6 +28,14 @@ def _traceback_locals_repr(error: BaseException) -> str:
             frames.append(dict(traceback.tb_frame.f_locals))
         traceback = traceback.tb_next
     return repr(frames)
+
+
+@pytest.mark.parametrize(
+    ("value", "secret"),
+    [("a%2fb", "a/b"), ("%61%62", "ab"), ("%61b", "ab")],
+)
+def test_redaction_covers_mixed_case_percent_encoded_secrets(value, secret):
+    assert redact_text(value, (secret,)) == "<redacted>"
 
 
 @pytest.mark.asyncio

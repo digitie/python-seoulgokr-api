@@ -200,8 +200,11 @@ async def test_model_copy_base_url_is_revalidated_before_request():
         general_min_interval_seconds=0,
         allow_insecure_http=True,
     ).model_copy(update={"general_base_url": "https://example.com/api?secret=key"})
-    with pytest.raises(ValueError, match="base URL"):
+    with pytest.raises(ValueError, match="base URL") as error:
         SeoulOpenDataClient(config=config)
+
+    assert error.value.__context__ is None
+    assert "secret=key" not in _traceback_locals_repr(error.value)
 
 
 @pytest.mark.asyncio

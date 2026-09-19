@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 
 REDACTED = "<redacted>"
 
@@ -29,8 +30,31 @@ def redact_text(value: str, secrets: tuple[str, ...]) -> str:
     for secret in secrets:
         if secret:
             result = result.replace(secret, REDACTED)
-            result = result.replace(quote(secret, safe=""), REDACTED)
+            result = _encoded_secret_pattern(secret).sub(REDACTED, result)
     return result
+
+
+def _encoded_secret_pattern(secret: str) -> re.Pattern[str]:
+    parts: list[str] = []
+    for byte in secret.encode("utf-8"):
+        alternatives = [f"%{_hex_escape(byte)}"]
+        if 0x20 <= byte <= 0x7E:
+            alternatives.insert(0, re.escape(chr(byte)))
+        parts.append(
+            alternatives[0]
+            if len(alternatives) == 1
+            else f"(?:{'|'.join(alternatives)})"
+        )
+    return re.compile("".join(parts))
+
+
+def _hex_escape(value: int) -> str:
+    return "".join(
+        f"[{character.lower()}{character.upper()}]"
+        if character.isalpha()
+        else character
+        for character in f"{value:02x}"
+    )
 
 
 def redact_value(value: Any, secrets: tuple[str, ...]) -> Any:

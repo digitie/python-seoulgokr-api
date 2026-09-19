@@ -48,6 +48,9 @@
 - 추가 리뷰에서 transport와 application retry가 각각 `max_retries`를 적용해 한 논리
   호출이 9회까지 증폭될 수 있는 P1을 재현했다. 두 계층이 공유하는 `RetryBudget`으로
   통합하고 회귀 테스트를 추가했다. WSL2 pytest는 65개로 늘었다.
+- 최종 리뷰에서 `model_copy` URL 검증 실패의 원래 ValidationError context와 소문자/부분
+  percent-encoded 인증키 redaction 누락을 재현했다. 안전한 재검증 오류 재생성과 mixed
+  encoding redaction 회귀를 추가했으며 WSL2 pytest는 68개로 늘었다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부

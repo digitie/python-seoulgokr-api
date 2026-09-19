@@ -150,27 +150,34 @@ class SeoulOpenDataConfig(BaseModel):
     def subway_key(self) -> SecretStr | None:
         return self.subway_api_key or self.api_key
 
-    def validated_copy(self) -> SeoulOpenDataConfig:
+    def validated_copy(_config: SeoulOpenDataConfig) -> SeoulOpenDataConfig:
         """``model_copy(update=...)``로 우회된 값을 실행 전 재검증한다."""
 
         values: dict[str, object] = {}
+        validation_message: str | None = None
+        validated: SeoulOpenDataConfig | None = None
         try:
             for field_name in ("api_key", "subway_api_key"):
-                secret = getattr(self, field_name)
+                secret = getattr(_config, field_name)
                 if secret is not None and not isinstance(secret, SecretStr):
-                    object.__setattr__(self, field_name, SecretStr(str(secret)))
-            values = self.model_dump()
-            return type(self).model_validate(values)
-        except ValidationError as exc:
-            details = "; ".join(
-                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
-                for error in exc.errors(include_url=False)
-            )
-            raise ValueError(
-                f"서울 Open API 설정이 유효하지 않습니다: {details}"
-            ) from None
+                    object.__setattr__(_config, field_name, SecretStr(str(secret)))
+            values = _config.model_dump()
+            try:
+                validated = type(_config).model_validate(values)
+            except ValidationError as exc:
+                validation_message = "; ".join(
+                    f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+                    for error in exc.errors(include_url=False)
+                )
         finally:
             values.clear()
+            _config = None  # type: ignore[assignment]
+        if validation_message is not None:
+            raise ValueError(
+                f"서울 Open API 설정이 유효하지 않습니다: {validation_message}"
+            )
+        assert validated is not None
+        return validated
 
     def policy_for(self, service: str) -> tuple[float, int | None]:
         """서비스별 최소 간격과 애플리케이션 예산을 반환한다."""

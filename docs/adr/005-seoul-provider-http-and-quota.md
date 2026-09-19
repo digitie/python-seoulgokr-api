@@ -45,6 +45,8 @@
 - transport/client 경계에서 `model_copy(update=...)`로 검증을 우회한 설정도 다시 검증하고,
   호출마다 현재 credential·endpoint·동시성 정책으로 limiter를 재확인한다. 따라서 mutable
   config 변경이 stale limiter를 조용히 재사용하거나 quota를 우회하지 않는다.
+- 설정 재검증 오류는 원래 Pydantic 예외 context를 그대로 노출하지 않고 안전한 오류로
+  재생성한다. path의 raw·percent-encoded 인증키 표현은 대소문자 변형을 포함해 redaction한다.
 
 ## 근거
 

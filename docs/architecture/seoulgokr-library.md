@@ -54,3 +54,5 @@ seoulgokr client facade
   전환을 하지 않는다.
 - `max_retries`는 transport와 application parser가 공유하는 논리 호출 단위의 bounded
   budget이며, 재시도 계층마다 별도로 초기화하지 않는다.
+- 설정 오류 traceback과 raw/provenance payload에는 API key가 남지 않도록 raw·percent-encoded
+  표현을 함께 정리한다.
