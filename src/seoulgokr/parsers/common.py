@@ -38,23 +38,23 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
 
     try:
         text = content.decode("utf-8-sig").strip()
-    except UnicodeDecodeError as exc:
-        raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다") from exc
+    except UnicodeDecodeError:
+        raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다") from None
     if not text:
         raise SeoulParseError("서울 Open API가 빈 응답을 반환했습니다")
     looks_xml = "xml" in content_type.lower() or text.startswith("<")
     if not looks_xml:
         try:
             value = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise SeoulParseError(f"JSON 응답을 해석할 수 없습니다: {exc}") from exc
+        except json.JSONDecodeError:
+            raise SeoulParseError("JSON 응답을 해석할 수 없습니다") from None
         if not isinstance(value, Mapping):
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
         return dict(value)
     try:
         root = SafeET.fromstring(text)
-    except (ET.ParseError, DefusedXmlException) as exc:
-        raise SeoulParseError(f"XML 응답을 해석할 수 없습니다: {exc}") from exc
+    except (ET.ParseError, DefusedXmlException):
+        raise SeoulParseError("XML 응답을 해석할 수 없습니다") from None
     return {strip_tag(root.tag): _xml_value(root)}
 
 
