@@ -102,10 +102,9 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[TrafficInfo]:
         """`OA-13291` 서울시 실시간 도로 소통 정보를 조회한다."""
 
-        if response_format.lower() != "xml":
-            raise SeoulConfigurationError(
-                "TrafficInfo response_format은 xml이어야 합니다"
-            )
+        response_format = _normalize_response_format(
+            response_format, allowed={"xml"}, service="TrafficInfo"
+        )
 
         return await self._query(
             source_id="OA-13291",
@@ -127,6 +126,10 @@ class SeoulOpenDataClient:
         response_format: str = "json",
     ) -> SeoulApiResult[SubwayArrival]:
         """`OA-12764` 역명 기준 서울 지하철 실시간 도착정보를 조회한다."""
+
+        response_format = _normalize_response_format(
+            response_format, allowed={"json", "xml"}, service="realtimeStationArrival"
+        )
 
         return await self._query(
             source_id="OA-12764",
@@ -152,6 +155,11 @@ class SeoulOpenDataClient:
         간격과 일일 예산을 반드시 운영 설정으로 지정해야 한다.
         """
 
+        response_format = _normalize_response_format(
+            response_format,
+            allowed={"json", "xml"},
+            service="realtimeStationArrival/ALL",
+        )
         if not self.config.allow_all_station_arrivals:
             raise SeoulConfigurationError(
                 "전체역 도착 API는 allow_all_station_arrivals=True로 명시적으로 활성화해야 합니다"
@@ -186,6 +194,10 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[SubwayPosition]:
         """`OA-12601` 공식 지하철 노선명 기준 열차 위치를 조회한다."""
 
+        response_format = _normalize_response_format(
+            response_format, allowed={"json", "xml"}, service="realtimePosition"
+        )
+
         return await self._query(
             source_id="OA-12601",
             service="realtimePosition",
@@ -206,6 +218,10 @@ class SeoulOpenDataClient:
         response_format: str = "json",
     ) -> SeoulApiResult[ParkingRealtime]:
         """`OA-21709` 서울시 공영주차장 실시간 주차대수를 조회한다."""
+
+        response_format = _normalize_response_format(
+            response_format, allowed={"json", "xml"}, service="GetParkingInfo"
+        )
 
         return await self._query(
             source_id="OA-21709",
@@ -228,6 +244,10 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[ParkingLot]:
         """`OA-13122` 서울시 공영주차장 기준정보를 조회한다."""
 
+        response_format = _normalize_response_format(
+            response_format, allowed={"json", "xml"}, service="GetParkInfo"
+        )
+
         return await self._query(
             source_id="OA-13122",
             service="GetParkInfo",
@@ -246,6 +266,10 @@ class SeoulOpenDataClient:
         response_format: str = "json",
     ) -> SeoulApiResult[CityData]:
         """`OA-21285` 장소 하나의 서울 실시간 도시데이터를 조회한다."""
+
+        response_format = _normalize_response_format(
+            response_format, allowed={"json", "xml"}, service="citydata"
+        )
 
         if (
             self.config.api_key is not None
@@ -326,3 +350,13 @@ def _result(
         request=response.request,
         raw_payload=envelope.payload,
     )
+
+
+def _normalize_response_format(value: str, *, allowed: set[str], service: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        allowed_text = ", ".join(sorted(allowed))
+        raise SeoulConfigurationError(
+            f"{service} response_format은 {allowed_text} 중 하나여야 합니다"
+        )
+    return normalized

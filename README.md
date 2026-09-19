@@ -57,6 +57,9 @@ asyncio.run(main())
 - 일반 API 페이지 범위는 한 호출 1,000건 이하, `sample` 키는 5건 이하로 사전 차단한다.
 - 지하철 실시간 API의 기본 최소 간격은 30초이며, 일반 API는 1초다. 이는 공개된
   서비스별 quota를 대신하는 값이 아니라 보수적인 client 보호 장치다.
+- 서울시 이용안내에 명시된 실시간 지하철 일 최대 1,000건은
+  `realtime_subway_daily_budget` 기본값으로 적용한다. 발급 key의 별도 계약이 있으면
+  운영자가 이 값을 조정하되, 확인되지 않은 일반 서비스 quota는 추정하지 않는다.
 - `service_daily_budgets`로 애플리케이션 자체 일일 예산을 설정할 수 있다. 미확인
   upstream quota를 코드에서 임의로 주장하지 않는다.
 - timeout, HTTP 429/5xx, 네트워크 오류는 bounded retry를 사용한다. HTTP 200 본문의
@@ -66,14 +69,16 @@ asyncio.run(main())
   `False`다. backend egress/proxy를 명시적으로 신뢰하는 환경에서만 opt-in하고,
   인증키를 브라우저에서 직접 호출하지 않는다. HTTPS 지원 여부와 실제
   서비스별 quota·reset 시각은 인증키 신청 후 운영자가 확인해야 한다.
+- limiter 공유 범위는 동일 credential·endpoint·이벤트 루프다. 여러 프로세스나 이벤트
+  루프가 같은 key를 사용하면 Redis 등 외부 distributed limiter를 별도로 둔다.
 
 먼저 읽을 문서:
 
-- [프로젝트 범위 보충](docs/project-scope.md)
-- [구현 계획](docs/implementation-plan.md)
-- [서울 데이터 소스 조사](docs/data-sources.md)
-- [현재 재개 지점](docs/resume-seoulgokr.md)
-- [라이브러리 아키텍처](docs/architecture/seoulgokr-library.md)
+- [프로젝트 범위 보충](https://github.com/digitie/python-seoulgokr-api/blob/main/docs/project-scope.md)
+- [구현 계획](https://github.com/digitie/python-seoulgokr-api/blob/main/docs/implementation-plan.md)
+- [서울 데이터 소스 조사](https://github.com/digitie/python-seoulgokr-api/blob/main/docs/data-sources.md)
+- [현재 재개 지점](https://github.com/digitie/python-seoulgokr-api/blob/main/docs/resume-seoulgokr.md)
+- [라이브러리 아키텍처](https://github.com/digitie/python-seoulgokr-api/blob/main/docs/architecture/seoulgokr-library.md)
 
 원 프로젝트의 운영 문서는 요청에 따라 원문 그대로 복제했다. 복제 문서 안의
 `kor-travel-transport`, FastAPI, Next.js, PostgreSQL, `parking-radar` 관련 내용은

@@ -34,11 +34,13 @@ class _ServiceState:
 
 
 class ServiceRateLimiter:
-    """프로세스 내부에서만 동작하는 보수적인 서비스 limiter.
+    """동일 이벤트 루프 내부에서 동작하는 보수적인 서비스 limiter.
 
     upstream의 quota가 공개되지 않은 서비스에 임의의 quota를 주장하지 않기 위해
     기본 daily budget은 무제한(``None``)이며, 운영자가 서비스별 예산을 명시할 때만
-    차단한다. 여러 프로세스가 같은 키를 공유하는 경우에는 외부 limiter가 필요하다.
+    차단한다. 실시간 지하철의 공식 1,000/day 안내만 별도 설정으로 반영한다. 다른
+    이벤트 루프나 프로세스가 같은 키를 공유하는 경우에는 외부 distributed limiter가
+    필요하다.
     """
 
     def __init__(
@@ -58,7 +60,7 @@ class ServiceRateLimiter:
 
     @classmethod
     def shared(cls, scope: str, *, timezone_name: str) -> ServiceRateLimiter:
-        """동일 key scope의 client가 process 내부 limiter를 공유한다."""
+        """동일 key scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
 
         try:
             loop_id = id(asyncio.get_running_loop())

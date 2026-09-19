@@ -46,14 +46,6 @@ class AsyncSeoulTransport:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
-        if not config.allow_insecure_http and (
-            config.general_base_url.startswith("http://")
-            or config.subway_base_url.startswith("http://")
-        ):
-            raise SeoulConfigurationError(
-                "서울 Open API 공식 endpoint가 HTTP이므로 기본적으로 차단했습니다. "
-                "HTTPS proxy를 사용하거나 backend 전용 설정에서 allow_insecure_http=True를 명시하세요"
-            )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(config.timeout_seconds),
             headers={
@@ -112,6 +104,11 @@ class AsyncSeoulTransport:
             if api == "general"
             else self.config.subway_base_url
         )
+        if base_url.startswith("http://") and not self.config.allow_insecure_http:
+            raise SeoulConfigurationError(
+                "서울 Open API 공식 endpoint가 HTTP이므로 기본적으로 차단했습니다. "
+                "HTTPS proxy를 사용하거나 backend 전용 설정에서 allow_insecure_http=True를 명시하세요"
+            )
         if include_pagination:
             if start_index is None or end_index is None:
                 raise ValueError(
@@ -184,14 +181,14 @@ class AsyncSeoulTransport:
                 async with limiter.slot(service, policy):
                     async with asyncio.timeout(self.config.timeout_seconds):
                         response = await self._client.get(url)
-            except (TimeoutError, httpx.TimeoutException, httpx.NetworkError) as exc:
+            except (TimeoutError, httpx.TransportError) as exc:
                 last_error = exc
                 if attempt + 1 >= attempts:
                     raise SeoulHttpError(
                         0,
                         "서울 Open API 네트워크 요청이 실패했습니다",
                         request=request_info,
-                    ) from exc
+                    ) from None
                 await self._backoff(attempt)
                 continue
             if response.status_code == 429:
@@ -200,6 +197,9 @@ class AsyncSeoulTransport:
                     retry_after is not None
                     and retry_after > self.config.retry_backoff_max_seconds
                 ):
+                    limiter.mark_cooldown(
+                        service, self.config.retry_backoff_max_seconds
+                    )
                     raise SeoulRateLimitError(
                         "서울 Open API가 지정한 Retry-After가 너무 길어 재시도를 중단했습니다",
                         retry_after=retry_after,
@@ -223,6 +223,9 @@ class AsyncSeoulTransport:
                     retry_after is not None
                     and retry_after > self.config.retry_backoff_max_seconds
                 ):
+                    limiter.mark_cooldown(
+                        service, self.config.retry_backoff_max_seconds
+                    )
                     raise SeoulRateLimitError(
                         "서울 Open API 5xx Retry-After가 너무 길어 재시도를 중단했습니다",
                         retry_after=retry_after,
@@ -258,7 +261,7 @@ class AsyncSeoulTransport:
             503,
             "서울 Open API 일시 오류 재시도 한도를 초과했습니다",
             request=request_info,
-        ) from last_error
+        ) from None
 
     async def _backoff(self, attempt: int, *, retry_after: float | None = None) -> None:
         if retry_after is not None:

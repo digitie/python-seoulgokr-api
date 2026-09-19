@@ -34,6 +34,7 @@ class SeoulOpenDataConfig(BaseModel):
     max_concurrency: int = Field(default=1, ge=1, le=20)
     default_daily_budget: int | None = Field(default=None, ge=1)
     service_daily_budgets: dict[str, int] = Field(default_factory=dict)
+    realtime_subway_daily_budget: int | None = Field(default=1000, ge=1)
     quota_timezone: str = "Asia/Seoul"
     allow_insecure_http: bool = False
     allow_all_station_arrivals: bool = False
@@ -132,6 +133,8 @@ class SeoulOpenDataConfig(BaseModel):
             else self.general_min_interval_seconds
         )
         budget = self.service_daily_budgets.get(service, self.default_daily_budget)
+        if budget is None and service in {"realtimeStationArrival", "realtimePosition"}:
+            budget = self.realtime_subway_daily_budget
         return minimum, budget
 
     @staticmethod

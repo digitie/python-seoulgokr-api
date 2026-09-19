@@ -299,6 +299,10 @@ async def test_malformed_envelope_and_traffic_row_are_rejected(config):
             200,
             json={"RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"}},
         ),
+        httpx.Response(
+            200,
+            json={"TrafficInfo": {"row": [{"LINK_ID": "x"}]}},
+        ),
     ]
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -315,6 +319,8 @@ async def test_malformed_envelope_and_traffic_row_are_rejected(config):
         with pytest.raises(SeoulParseError, match="list/row"):
             await client.traffic_info("link")
         with pytest.raises(SeoulParseError, match="list/row"):
+            await client.traffic_info("link")
+        with pytest.raises(SeoulParseError, match="RESULT.CODE"):
             await client.traffic_info("link")
 
 
@@ -453,6 +459,24 @@ async def test_injected_http_client_still_has_a_timeout():
     ):
         with pytest.raises(SeoulHttpError, match="네트워크"):
             await client.traffic_info("link")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_type", [httpx.ConnectError, httpx.UnsupportedProtocol])
+async def test_transport_errors_are_normalized_without_key_cause(config, error_type):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        raise error_type("transport failure", request=request)
+
+    no_retry_config = config.model_copy(update={"max_retries": 0})
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=no_retry_config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulHttpError) as error:
+            await client.traffic_info("link")
+
+    assert error.value.__cause__ is None
+    assert "unit-fixture-key" not in repr(error.value)
 
 
 @pytest.mark.asyncio

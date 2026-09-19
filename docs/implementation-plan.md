@@ -98,7 +98,8 @@ src/seoulgokr/
   최대 5건 제한을 fixture/contract test에 고정한다.
 - 실시간 지하철의 공식 안내에는 일 최대 1,000건 요청이 표시되어 있다. 다른
   서비스의 일 quota·rate limit은 조사 시점에 공식적으로 확인되지 않았으므로
-  수치로 가정하지 않는다.
+  수치로 가정하지 않는다. provider는 `realtime_subway_daily_budget` 기본값으로
+  실시간 지하철 상한만 적용한다.
 - service/key 조합별 최소 호출 간격과 동시 요청 semaphore를 둔다.
 - 애플리케이션 자체 daily budget을 별도로 두고, upstream quota와 혼동하지 않게
   이름을 구분한다. 기본 budget 수치는 실키 발급·운영 신청 후 정한다.

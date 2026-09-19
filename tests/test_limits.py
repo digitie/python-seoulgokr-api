@@ -89,10 +89,45 @@ async def test_sample_subway_page_guard_rejects_index_six():
             await client.subway_arrivals("서울", start_index=0, end_index=6)
 
 
-def test_http_endpoint_is_fail_closed_by_default():
+@pytest.mark.asyncio
+async def test_realtime_subway_daily_budget_defaults_to_configured_public_limit():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "errorMessage": {"code": "INFO-000", "message": "정상"},
+                "realtimeArrivalList": [{"statnNm": "서울"}],
+            },
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="subway-budget-key",
+        realtime_subway_daily_budget=1,
+        general_min_interval_seconds=0,
+        realtime_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        await client.subway_arrivals("서울")
+        with pytest.raises(SeoulQuotaError, match="일일 호출 예산"):
+            await client.subway_arrivals("서울")
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_http_endpoint_is_fail_closed_by_default():
     config = SeoulOpenDataConfig(api_key="key")
-    with pytest.raises(SeoulConfigurationError, match="HTTP"):
-        SeoulOpenDataClient(config=config)
+    async with SeoulOpenDataClient(config=config) as client:
+        with pytest.raises(SeoulConfigurationError, match="HTTP"):
+            await client.traffic_info("link")
 
 
 def test_subway_only_configuration_can_be_created_from_env(monkeypatch):

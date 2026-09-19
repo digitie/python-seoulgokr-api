@@ -12,6 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from defusedxml import ElementTree as SafeET  # type: ignore[import-untyped]
+from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
 from ..errors import (
     TRANSIENT_UPSTREAM_CODES,
@@ -52,7 +53,7 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
         return dict(value)
     try:
         root = SafeET.fromstring(text)
-    except ET.ParseError as exc:
+    except (ET.ParseError, DefusedXmlException) as exc:
         raise SeoulParseError(f"XML 응답을 해석할 수 없습니다: {exc}") from exc
     return {strip_tag(root.tag): _xml_value(root)}
 
@@ -64,6 +65,8 @@ def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvel
             f"{service} 응답에 서울 Open API envelope 표식이 없습니다"
         )
     result_code, result_message = _extract_result(payload, service_payload)
+    if result_code is None:
+        raise SeoulParseError(f"{service} 응답에 RESULT.CODE가 없습니다")
     list_total_count = _list_total_count(payload, service_payload)
     rows = _extract_rows(service_payload)
     if result_code and result_code != "INFO-000":
@@ -101,7 +104,9 @@ def extract_citydata_envelope(
             "citydata 응답에 CITYDATA 또는 서울 Open API 결과 표식이 없습니다"
         )
     result_code, result_message = _extract_result(payload, service_payload)
-    if result_code and result_code not in {"INFO-000", "INFO-200"}:
+    if result_code is None:
+        raise SeoulParseError("citydata 응답에 RESULT.CODE가 없습니다")
+    if result_code not in {"INFO-000", "INFO-200"}:
         raise SeoulUpstreamError(
             result_code,
             result_message or "서울 Open API가 오류를 반환했습니다",

@@ -58,7 +58,7 @@ jobs:
       - name: Check sdist contents
         shell: bash
         run: |
-          if tar -tzf dist/*.tar.gz | grep -E '(^|/)(AGENTS|CLAUDE|SKILL|\.github|docs|scripts|tests)/'; then
+          if tar -tzf dist/*.tar.gz | grep -E '(^|/)(AGENTS\.md|CLAUDE\.md|SKILL\.md|\.github/|docs/|scripts/|tests/|examples/)'; then
             echo "internal project files leaked into the source distribution"
             exit 1
           fi

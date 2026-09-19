@@ -121,7 +121,8 @@ quota와 분당 rate limit을 이 숫자에서 추정하지 않는다.
   사용 전에 인증키 발급이 필요하다고 안내한다.
 - 같은 안내에는 실시간 지하철 Open API를 하루 최대 1,000건 요청할 수 있고, 한
   호출은 최대 1,000건이라고 적혀 있다. 일반 인증키와 실시간 지하철 인증키
-  신청 경로가 별도로 표시된다.
+  신청 경로가 별도로 표시된다. provider는 이 일일 상한을
+  `realtime_subway_daily_budget` 기본값으로 적용한다.
 - `sample` 키는 최초 5건 이내/일부 장소만 호출할 수 있으며, 명세 오류 코드에도
   `ERROR-335`가 있다.
 - [이용약관의 Open API 제한 조항](https://data.seoul.go.kr/etc/accessTerms.do)은
@@ -139,6 +140,10 @@ quota와 분당 rate limit을 이 숫자에서 추정하지 않는다.
 
 위 항목은 추정하지 않고 **신청 후 확인**으로 유지한다. 인증키 발급 후 작은
 범위의 opt-in smoke test와 서울시 문의/Q&A 답변으로 확인한다.
+
+provider의 process limiter 공유 범위는 동일 credential·endpoint·이벤트 루프다. 여러
+프로세스/이벤트 루프가 같은 key를 사용할 운영 구성에서는 별도 distributed limiter가
+필요하다.
 
 ## 오류·장애 처리 메모
 
