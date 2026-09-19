@@ -165,6 +165,17 @@ class AsyncSeoulTransport:
             return self._provided_limiter
         return self._limiters[api]
 
+    def mark_cooldown(
+        self, *, api: str, service: str, delay_seconds: float | None
+    ) -> None:
+        """application-level quota 오류를 다음 호출에 반영한다."""
+
+        if api not in {"general", "subway"}:
+            raise ValueError("api는 general 또는 subway여야 합니다")
+        self._limiter_for(api).mark_cooldown(
+            self.config.quota_group(service), delay_seconds
+        )
+
     async def _request_with_retry(
         self,
         url: str,
@@ -175,6 +186,7 @@ class AsyncSeoulTransport:
         limiter: ServiceRateLimiter,
     ) -> TransportResponse:
         last_error: Exception | None = None
+        network_failure = False
         attempts = self.config.max_retries + 1
         for attempt in range(attempts):
             try:
@@ -184,11 +196,8 @@ class AsyncSeoulTransport:
             except (TimeoutError, httpx.TransportError) as exc:
                 last_error = exc
                 if attempt + 1 >= attempts:
-                    raise SeoulHttpError(
-                        0,
-                        "서울 Open API 네트워크 요청이 실패했습니다",
-                        request=request_info,
-                    ) from None
+                    network_failure = True
+                    break
                 await self._backoff(attempt)
                 continue
             if response.status_code == 429:
@@ -255,6 +264,15 @@ class AsyncSeoulTransport:
                     if key.lower() in {"content-type", "retry-after"}
                 },
                 fetched_at=datetime.now(UTC),
+                request=request_info,
+            )
+        if network_failure:
+            # This raise is intentionally outside the except block.  Raising a
+            # sanitized error inside it would retain the httpx exception in
+            # ``__context__`` along with its request URL and credentials.
+            raise SeoulHttpError(
+                0,
+                "서울 Open API 네트워크 요청이 실패했습니다",
                 request=request_info,
             )
         raise SeoulHttpError(

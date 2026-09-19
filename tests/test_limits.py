@@ -117,7 +117,7 @@ async def test_realtime_subway_daily_budget_defaults_to_configured_public_limit(
     ):
         await client.subway_arrivals("서울")
         with pytest.raises(SeoulQuotaError, match="일일 호출 예산"):
-            await client.subway_arrivals("서울")
+            await client.subway_positions("1호선")
 
     assert calls == 1
 

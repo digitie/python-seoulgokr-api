@@ -32,7 +32,8 @@ from seoulgokr import SeoulOpenDataClient, SeoulOpenDataConfig
 async def main() -> None:
     config = SeoulOpenDataConfig.from_env(
         # 실시간 서비스는 기본 30초 간격이다. 실제 발급 quota에 맞춰 조정한다.
-        service_daily_budgets={"realtimeStationArrival": 900},
+        # 도착·위치·전체역 endpoint가 공유하는 client 예산
+        service_daily_budgets={"realtimeSubway": 900},
     )
     async with SeoulOpenDataClient(config=config) as client:
         result = await client.subway_arrivals("서울")
@@ -58,13 +59,15 @@ asyncio.run(main())
 - 지하철 실시간 API의 기본 최소 간격은 30초이며, 일반 API는 1초다. 이는 공개된
   서비스별 quota를 대신하는 값이 아니라 보수적인 client 보호 장치다.
 - 서울시 이용안내에 명시된 실시간 지하철 일 최대 1,000건은
-  `realtime_subway_daily_budget` 기본값으로 적용한다. 발급 key의 별도 계약이 있으면
-  운영자가 이 값을 조정하되, 확인되지 않은 일반 서비스 quota는 추정하지 않는다.
+  `realtime_subway_daily_budget` 기본값으로 적용하며, 도착·위치·전체역 endpoint가
+  하나의 limiter 일일 예산을 공유한다. 발급 key의 별도 계약이 있으면 운영자가 이
+  값을 조정하되, 확인되지 않은 일반 서비스 quota는 추정하지 않는다.
 - `service_daily_budgets`로 애플리케이션 자체 일일 예산을 설정할 수 있다. 미확인
   upstream quota를 코드에서 임의로 주장하지 않는다.
 - timeout, HTTP 429/5xx, 네트워크 오류는 bounded retry를 사용한다. HTTP 200 본문의
   `ERROR-500/600/601`도 같은 방식으로 제한 재시도하며, `INFO-200`은 정상적인 빈
-  결과로 반환한다.
+  결과로 반환한다. upstream `ERROR-337` 또는 명시적인 quota 문구는 재시도하지 않고
+  `upstream_quota_cooldown_seconds`만큼 limiter에 bounded cooldown을 기록한다.
 - 공식 endpoint가 HTTP 형태로 문서화되어 있어 `allow_insecure_http` 기본값은
   `False`다. backend egress/proxy를 명시적으로 신뢰하는 환경에서만 opt-in하고,
   인증키를 브라우저에서 직접 호출하지 않는다. HTTPS 지원 여부와 실제

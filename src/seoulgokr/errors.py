@@ -5,6 +5,31 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 TRANSIENT_UPSTREAM_CODES = frozenset({"ERROR-500", "ERROR-600", "ERROR-601"})
+UPSTREAM_QUOTA_CODES = frozenset({"ERROR-337"})
+_QUOTA_MESSAGE_MARKERS = (
+    "quota",
+    "rate limit",
+    "daily limit",
+    "limit exceeded",
+    "한도 초과",
+    "호출 한도",
+    "일일 호출",
+    "호출 횟수",
+)
+
+
+def is_upstream_quota_error(code: str, message: str) -> bool:
+    """서울 API의 quota 초과 응답인지 판별한다.
+
+    ``ERROR-335``/``ERROR-336``은 호출 1회의 페이지 크기 오류이므로
+    cooldown 대상에서 제외한다. 서울시가 일일 한도 초과에 사용하는
+    ``ERROR-337``과 명시적인 quota 문구만 quota로 분류한다.
+    """
+
+    normalized_message = message.casefold()
+    return code in UPSTREAM_QUOTA_CODES or any(
+        marker in normalized_message for marker in _QUOTA_MESSAGE_MARKERS
+    )
 
 
 class SeoulGokrError(Exception):

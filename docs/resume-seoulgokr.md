@@ -24,6 +24,6 @@
 
 ## 다음 한 작업
 
-수정 커밋을 push한 뒤 독립 James/Popper hostile review를 다시 실행하고, CI와
-live smoke 결과가 유지되면 PR #1을 Ready/merge한다. 실제 quota·HTTPS 지원은
+예외 `__context__`와 실시간 지하철 quota/cooldown P1 수정 커밋을 push한 뒤 독립 hostile review 2건을
+최신 커밋에서 다시 완료하고, CI와 live smoke 결과가 유지되면 PR #1을 Ready/merge한다. 실제 quota·HTTPS 지원은
 인증키 신청 후 별도 운영 task로 확인한다.

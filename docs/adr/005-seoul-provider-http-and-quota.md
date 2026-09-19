@@ -14,11 +14,14 @@
 - 공개되지 않은 서비스별 일 quota는 코드에서 추정하지 않는다. 일반 서비스의 기본
   daily budget은 무제한이며, 소비자가 `service_daily_budgets`로 자체 예산을 설정한다.
 - 서울시 이용안내에 명시된 실시간 지하철 일 최대 1,000건은
-  `realtime_subway_daily_budget` 기본값으로 적용한다.
+  `realtime_subway_daily_budget` 기본값으로 적용하고 도착·위치·전체역 endpoint가
+  `realtimeSubway` limiter group을 공유한다.
 - 실시간 지하철의 보수적 기본 간격은 30초로 둔다. 전체역 도착은 기본 비활성이고,
   명시적 opt-in과 `all_station_arrivals_max_items` 상한이 모두 필요하다.
 - 429의 `Retry-After`는 동일 credential·endpoint·이벤트 루프의 limiter에 공유 cooldown으로
   기록한다. 지정 시간이 client backoff 상한보다 길면 자동 재시도하지 않는다.
+- application-level `ERROR-337` 또는 명시적인 quota 문구는 자동 재시도하지 않고
+  `upstream_quota_cooldown_seconds`만큼 bounded cooldown을 기록한다.
 
 ## 근거
 

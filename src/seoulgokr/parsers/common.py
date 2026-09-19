@@ -36,25 +36,39 @@ class ParsedEnvelope:
 def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any]:
     """응답 body를 JSON/XML 모두 mapping으로 변환한다."""
 
+    decode_error = False
     try:
         text = content.decode("utf-8-sig").strip()
     except UnicodeDecodeError:
-        raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다") from None
+        decode_error = True
+    if decode_error:
+        # Keep this raise outside the except block.  Otherwise the original
+        # UnicodeDecodeError retains the complete response bytes in __context__.
+        raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다")
     if not text:
         raise SeoulParseError("서울 Open API가 빈 응답을 반환했습니다")
     looks_xml = "xml" in content_type.lower() or text.startswith("<")
     if not looks_xml:
+        json_error = False
         try:
             value = json.loads(text)
         except json.JSONDecodeError:
-            raise SeoulParseError("JSON 응답을 해석할 수 없습니다") from None
+            json_error = True
+        if json_error:
+            # JSONDecodeError.__context__ can retain the raw response body.
+            raise SeoulParseError("JSON 응답을 해석할 수 없습니다")
         if not isinstance(value, Mapping):
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
         return dict(value)
+    xml_error = False
     try:
         root = SafeET.fromstring(text)
     except (ET.ParseError, DefusedXmlException):
-        raise SeoulParseError("XML 응답을 해석할 수 없습니다") from None
+        xml_error = True
+    if xml_error:
+        # Keep the parser exception, which may include response text, out of
+        # the public exception chain.
+        raise SeoulParseError("XML 응답을 해석할 수 없습니다")
     return {strip_tag(root.tag): _xml_value(root)}
 
 

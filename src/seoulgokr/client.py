@@ -15,6 +15,7 @@ from .errors import (
     SeoulParseError,
     SeoulQuotaError,
     SeoulUpstreamError,
+    is_upstream_quota_error,
 )
 from .models import (
     CityData,
@@ -173,6 +174,10 @@ class SeoulOpenDataClient:
             )
         if max_items is not None and max_items <= 0:
             raise SeoulConfigurationError("max_items는 양수여야 합니다")
+        effective_max_items = min(
+            max_items or self.config.all_station_arrivals_max_items,
+            self.config.all_station_arrivals_max_items,
+        )
 
         return await self._query(
             source_id="OA-15799",
@@ -181,7 +186,7 @@ class SeoulOpenDataClient:
             api="subway",
             response_format=response_format,
             include_pagination=False,
-            max_items=max_items or self.config.all_station_arrivals_max_items,
+            max_items=effective_max_items,
         )
 
     async def subway_positions(
@@ -296,6 +301,7 @@ class SeoulOpenDataClient:
         source_id: str,
         service: str,
         parser: Callable[[Mapping[str, Any]], tuple[ParsedEnvelope, tuple[T, ...]]],
+        api: str,
         max_items: int | None = None,
         **request_kwargs: Any,
     ) -> SeoulApiResult[T]:
@@ -303,7 +309,9 @@ class SeoulOpenDataClient:
 
         transient_codes = TRANSIENT_UPSTREAM_CODES
         for attempt in range(self.config.max_retries + 1):
-            response = await self.transport.request(service=service, **request_kwargs)
+            response = await self.transport.request(
+                service=service, api=api, **request_kwargs
+            )
             try:
                 payload = redact_value(
                     parse_payload(response.content, content_type=response.content_type),
@@ -316,6 +324,12 @@ class SeoulOpenDataClient:
                     )
             except SeoulUpstreamError as exc:
                 exc.request = dict(response.request)
+                if is_upstream_quota_error(exc.code, exc.message):
+                    self.transport.mark_cooldown(
+                        api=api,
+                        service=service,
+                        delay_seconds=self.config.upstream_quota_cooldown_seconds,
+                    )
                 if (
                     exc.code not in transient_codes
                     or attempt >= self.config.max_retries

@@ -38,6 +38,7 @@ XML은 서비스명 root 아래에 같은 요소가 있다. 지하철 실시간 
 - `ERROR-331`~`ERROR-334`: 시작·종료 위치 오류
 - `ERROR-335`: `sample` 키는 한 번에 최대 5건
 - `ERROR-336`: 한 호출 최대 1,000건
+- `ERROR-337`: 이용 한도 초과(당일 호출을 중단해야 함)
 - `ERROR-500`, `ERROR-600`, `ERROR-601`: 서버·DB·SQL 오류
 
 `ERROR-335`/`ERROR-336`은 페이지 크기 제한이지 일일 quota가 아니다. 일일
@@ -141,9 +142,15 @@ quota와 분당 rate limit을 이 숫자에서 추정하지 않는다.
 위 항목은 추정하지 않고 **신청 후 확인**으로 유지한다. 인증키 발급 후 작은
 범위의 opt-in smoke test와 서울시 문의/Q&A 답변으로 확인한다.
 
-provider의 process limiter 공유 범위는 동일 credential·endpoint·이벤트 루프다. 여러
-프로세스/이벤트 루프가 같은 key를 사용할 운영 구성에서는 별도 distributed limiter가
-필요하다.
+provider의 process limiter 공유 범위는 동일 credential·endpoint·이벤트 루프이며,
+실시간 지하철 endpoint는 아래의 공통 quota group을 사용한다. 여러 프로세스/이벤트
+루프가 같은 key를 사용할 운영 구성에서는 별도 distributed limiter가 필요하다.
+
+실시간 지하철 도착·위치·전체역 endpoint는 서울시 안내의 일일 1,000건을 하나의
+`realtimeSubway` limiter group으로 공유한다. application-level `ERROR-337` 또는
+명시적인 quota 문구를 받으면 provider는 자동 재시도하지 않고 설정된
+`upstream_quota_cooldown_seconds`만큼 bounded cooldown을 기록한다. 정확한 quota reset
+시각은 공식 신청 후 확인 대상으로 남긴다.
 
 ## 오류·장애 처리 메모
 

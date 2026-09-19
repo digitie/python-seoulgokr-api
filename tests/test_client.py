@@ -376,7 +376,7 @@ async def test_all_station_endpoint_requires_opt_in_and_bounds_items(config):
         SeoulOpenDataClient(config=all_config, http_client=http_client) as client,
     ):
         with pytest.raises(SeoulParseError, match="최대 항목 수"):
-            await client.subway_arrivals_all()
+            await client.subway_arrivals_all(max_items=999)
 
 
 @pytest.mark.asyncio
@@ -414,6 +414,51 @@ async def test_retry_after_cooldown_is_shared_between_clients(config):
 
     assert result.items[0].link_id == "link"
     assert elapsed >= 0.04
+
+
+@pytest.mark.asyncio
+async def test_application_quota_error_sets_shared_bounded_cooldown():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                200,
+                json={"RESULT": {"CODE": "ERROR-337", "MESSAGE": "한도 초과"}},
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="application-quota-key",
+        max_retries=0,
+        general_min_interval_seconds=0,
+        upstream_quota_cooldown_seconds=0.05,
+        allow_insecure_http=True,
+    )
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as first_http:
+        first = SeoulOpenDataClient(config=config, http_client=first_http)
+        with pytest.raises(SeoulUpstreamError, match="ERROR-337"):
+            await first.traffic_info("link")
+
+    started = asyncio.get_running_loop().time()
+    async with httpx.AsyncClient(transport=transport) as second_http:
+        second = SeoulOpenDataClient(config=config, http_client=second_http)
+        result = await second.traffic_info("link")
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.items[0].link_id == "link"
+    assert elapsed >= 0.04
+    assert calls == 2
 
 
 @pytest.mark.asyncio
@@ -476,6 +521,7 @@ async def test_transport_errors_are_normalized_without_key_cause(config, error_t
             await client.traffic_info("link")
 
     assert error.value.__cause__ is None
+    assert error.value.__context__ is None
     assert "unit-fixture-key" not in repr(error.value)
 
 
@@ -496,6 +542,7 @@ async def test_malformed_response_does_not_keep_key_in_parse_cause(config):
             await client.traffic_info("link")
 
     assert error.value.__cause__ is None
+    assert error.value.__context__ is None
     assert "unit-fixture-key" not in repr(error.value)
 
 

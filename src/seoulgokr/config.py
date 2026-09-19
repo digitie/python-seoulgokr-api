@@ -35,6 +35,7 @@ class SeoulOpenDataConfig(BaseModel):
     default_daily_budget: int | None = Field(default=None, ge=1)
     service_daily_budgets: dict[str, int] = Field(default_factory=dict)
     realtime_subway_daily_budget: int | None = Field(default=1000, ge=1)
+    upstream_quota_cooldown_seconds: float = Field(default=60.0, gt=0, le=86400)
     quota_timezone: str = "Asia/Seoul"
     allow_insecure_http: bool = False
     allow_all_station_arrivals: bool = False
@@ -125,6 +126,7 @@ class SeoulOpenDataConfig(BaseModel):
     def policy_for(self, service: str) -> tuple[float, int | None]:
         """서비스별 최소 간격과 애플리케이션 예산을 반환한다."""
 
+        original_service = service
         service = self.quota_group(service)
         realtime = service.startswith("realtime")
         minimum = (
@@ -132,15 +134,23 @@ class SeoulOpenDataConfig(BaseModel):
             if realtime
             else self.general_min_interval_seconds
         )
-        budget = self.service_daily_budgets.get(service, self.default_daily_budget)
-        if budget is None and service in {"realtimeStationArrival", "realtimePosition"}:
+        budget = self.service_daily_budgets.get(service)
+        if budget is None:
+            budget = self.service_daily_budgets.get(
+                original_service, self.default_daily_budget
+            )
+        if budget is None and service == "realtimeSubway":
             budget = self.realtime_subway_daily_budget
         return minimum, budget
 
     @staticmethod
     def quota_group(service: str) -> str:
-        if service == "realtimeStationArrival/ALL":
-            return "realtimeStationArrival"
+        if service in {
+            "realtimeStationArrival",
+            "realtimeStationArrival/ALL",
+            "realtimePosition",
+        }:
+            return "realtimeSubway"
         return service
 
 

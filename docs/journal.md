@@ -11,7 +11,13 @@
 - WSL2에서 Ruff, mypy, pytest 27개, wheel/sdist build, `twine check`, clean wheel
   install을 통과시켰고 secret scanner도 통과했다. transport exception 원인 redaction,
   lazy HTTP fail-closed, result code 강제와 defused XML 오류 정규화도 반영했다.
-  수정 후 James/Popper 독립 리뷰와 CI를 재실행한 뒤 PR #1 merge gate를 진행한다.
+- 최종 적대적 리뷰에서 Python 예외의 `__context__`에 httpx request URL·응답 본문이
+  남을 수 있는 P1을 재현했다. 네트워크/JSON/XML/UTF-8 오류를 except 블록 밖에서
+  정규화하고 `__context__` 회귀 검사를 추가했으며 WSL2 27개 테스트가 다시 통과했다.
+- 두 번째 최종 리뷰에서 확인한 P1도 반영했다. 실시간 도착·위치·전체역을
+  `realtimeSubway` 일일 예산으로 통합하고, `ERROR-337`/quota 문구를 bounded cooldown으로
+  기록하는 회귀 테스트를 추가했다. WSL2 전체 테스트는 28개로 늘어났다.
+  두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부
