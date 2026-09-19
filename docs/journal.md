@@ -50,7 +50,8 @@
   통합하고 회귀 테스트를 추가했다. WSL2 pytest는 65개로 늘었다.
 - 최종 리뷰에서 `model_copy` URL 검증 실패의 원래 ValidationError context와 소문자/부분
   percent-encoded 인증키 redaction 누락을 재현했다. 안전한 재검증 오류 재생성과 mixed
-  encoding redaction 회귀를 추가했으며 WSL2 pytest는 68개로 늘었다.
+  encoding redaction 회귀를 추가했으며, UTF-8 raw 문자와 encoded 구분자의 혼합 변형도
+  보강했다. WSL2 pytest는 70개로 늘었다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부

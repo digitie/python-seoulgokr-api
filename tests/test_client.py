@@ -32,7 +32,13 @@ def _traceback_locals_repr(error: BaseException) -> str:
 
 @pytest.mark.parametrize(
     ("value", "secret"),
-    [("a%2fb", "a/b"), ("%61%62", "ab"), ("%61b", "ab")],
+    [
+        ("a%2fb", "a/b"),
+        ("%61%62", "ab"),
+        ("%61b", "ab"),
+        ("가%2fb", "가/b"),
+        ("%EA%B0%80%2Fb", "가/b"),
+    ],
 )
 def test_redaction_covers_mixed_case_percent_encoded_secrets(value, secret):
     assert redact_text(value, (secret,)) == "<redacted>"

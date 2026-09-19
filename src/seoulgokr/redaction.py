@@ -36,16 +36,19 @@ def redact_text(value: str, secrets: tuple[str, ...]) -> str:
 
 def _encoded_secret_pattern(secret: str) -> re.Pattern[str]:
     parts: list[str] = []
-    for byte in secret.encode("utf-8"):
-        alternatives = [f"%{_hex_escape(byte)}"]
-        if 0x20 <= byte <= 0x7E:
-            alternatives.insert(0, re.escape(chr(byte)))
-        parts.append(
-            alternatives[0]
-            if len(alternatives) == 1
-            else f"(?:{'|'.join(alternatives)})"
-        )
+    for character in secret:
+        encoded = "".join(_byte_pattern(byte) for byte in character.encode("utf-8"))
+        parts.append(f"(?:{re.escape(character)}|{encoded})")
     return re.compile("".join(parts))
+
+
+def _byte_pattern(value: int) -> str:
+    alternatives = [f"%{_hex_escape(value)}"]
+    if 0x20 <= value <= 0x7E:
+        alternatives.insert(0, re.escape(chr(value)))
+    return (
+        alternatives[0] if len(alternatives) == 1 else f"(?:{'|'.join(alternatives)})"
+    )
 
 
 def _hex_escape(value: int) -> str:
