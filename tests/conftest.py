@@ -16,6 +16,7 @@ def config() -> SeoulOpenDataConfig:
         realtime_min_interval_seconds=0,
         max_retries=1,
         retry_backoff_seconds=0,
+        allow_insecure_http=True,
     )
 
 

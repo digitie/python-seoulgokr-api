@@ -9,7 +9,12 @@ from typing import Any, Self, TypeVar
 import httpx
 
 from .config import SeoulOpenDataConfig
-from .errors import SeoulUpstreamError
+from .errors import (
+    SeoulConfigurationError,
+    SeoulParseError,
+    SeoulQuotaError,
+    SeoulUpstreamError,
+)
 from .models import (
     CityData,
     ParkingLot,
@@ -50,7 +55,16 @@ class SeoulOpenDataClient:
         http_client: httpx.AsyncClient | None = None,
         transport: AsyncSeoulTransport | None = None,
     ) -> None:
-        if config is None:
+        if transport is not None:
+            if api_key is not None or subway_api_key is not None:
+                raise ValueError(
+                    "transport와 api_key/subway_api_key를 동시에 지정할 수 없습니다"
+                )
+            if config is None:
+                config = transport.config
+            elif config != transport.config:
+                raise ValueError("config와 transport.config가 일치해야 합니다")
+        elif config is None:
             config = SeoulOpenDataConfig.from_env(
                 api_key=api_key, subway_api_key=subway_api_key
             )
@@ -80,6 +94,11 @@ class SeoulOpenDataClient:
         response_format: str = "xml",
     ) -> SeoulApiResult[TrafficInfo]:
         """`OA-13291` 서울시 실시간 도로 소통 정보를 조회한다."""
+
+        if response_format.lower() != "xml":
+            raise SeoulConfigurationError(
+                "TrafficInfo response_format은 xml이어야 합니다"
+            )
 
         return await self._query(
             source_id="OA-13291",
@@ -117,6 +136,7 @@ class SeoulOpenDataClient:
         self,
         *,
         response_format: str = "json",
+        max_items: int | None = None,
     ) -> SeoulApiResult[SubwayArrival]:
         """`OA-15799` 전체역 도착 API를 조회한다.
 
@@ -125,6 +145,20 @@ class SeoulOpenDataClient:
         간격과 일일 예산을 반드시 운영 설정으로 지정해야 한다.
         """
 
+        if not self.config.allow_all_station_arrivals:
+            raise SeoulConfigurationError(
+                "전체역 도착 API는 allow_all_station_arrivals=True로 명시적으로 활성화해야 합니다"
+            )
+        if (
+            self.config.subway_key is not None
+            and self.config.subway_key.get_secret_value() == "sample"
+        ):
+            raise SeoulQuotaError(
+                "sample 지하철 키로는 전체역 도착 API를 사용할 수 없습니다"
+            )
+        if max_items is not None and max_items <= 0:
+            raise SeoulConfigurationError("max_items는 양수여야 합니다")
+
         return await self._query(
             source_id="OA-15799",
             service="realtimeStationArrival/ALL",
@@ -132,6 +166,7 @@ class SeoulOpenDataClient:
             api="subway",
             response_format=response_format,
             include_pagination=False,
+            max_items=max_items or self.config.all_station_arrivals_max_items,
         )
 
     async def subway_positions(
@@ -205,6 +240,14 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[CityData]:
         """`OA-21285` 장소 하나의 서울 실시간 도시데이터를 조회한다."""
 
+        if (
+            self.config.api_key is not None
+            and self.config.api_key.get_secret_value() == "sample"
+        ):
+            raise SeoulQuotaError(
+                "sample 일반 키는 citydata의 요청 장소를 보장하지 않으므로 사용할 수 없습니다"
+            )
+
         return await self._query(
             source_id="OA-21285",
             service="citydata",
@@ -222,6 +265,7 @@ class SeoulOpenDataClient:
         source_id: str,
         service: str,
         parser: Callable[[Mapping[str, Any]], tuple[ParsedEnvelope, tuple[T, ...]]],
+        max_items: int | None = None,
         **request_kwargs: Any,
     ) -> SeoulApiResult[T]:
         """transport 오류와 HTTP 200 application-level 일시 오류를 함께 처리한다."""
@@ -234,6 +278,10 @@ class SeoulOpenDataClient:
                     response.content, content_type=response.content_type
                 )
                 envelope, items = parser(payload)
+                if max_items is not None and len(items) > max_items:
+                    raise SeoulParseError(
+                        f"{service} 응답이 허용된 최대 항목 수({max_items})를 초과했습니다"
+                    )
             except SeoulUpstreamError as exc:
                 exc.request = dict(response.request)
                 if (

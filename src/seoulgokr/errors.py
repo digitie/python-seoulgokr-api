@@ -16,6 +16,19 @@ class SeoulConfigurationError(SeoulGokrError):
 class SeoulRateLimitError(SeoulGokrError):
     """호출 간격 또는 동시성 제한으로 현재 호출을 수행할 수 없다."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: float | None = None,
+        status_code: int | None = None,
+        request: Mapping[str, str] | None = None,
+    ) -> None:
+        self.retry_after = retry_after
+        self.status_code = status_code
+        self.request = dict(request or {})
+        super().__init__(message)
+
 
 class SeoulQuotaError(SeoulRateLimitError):
     """애플리케이션이 설정한 일일 예산을 소진했다."""

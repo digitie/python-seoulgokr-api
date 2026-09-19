@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
 
 from seoulgokr import SeoulOpenDataClient
-from seoulgokr.errors import SeoulUpstreamError
+from seoulgokr.errors import (
+    SeoulConfigurationError,
+    SeoulParseError,
+    SeoulRateLimitError,
+    SeoulUpstreamError,
+)
+from seoulgokr.parsers.services import parse_parking_lots
 
 
 @pytest.mark.asyncio
@@ -219,3 +227,148 @@ async def test_non_retryable_upstream_error_is_raised(config):
     ):
         with pytest.raises(SeoulUpstreamError, match="ERROR-336"):
             await client.traffic_info("link")
+
+
+@pytest.mark.asyncio
+async def test_malformed_envelope_and_traffic_row_are_rejected(config):
+    responses = [
+        httpx.Response(200, json={"unexpected": "payload"}),
+        httpx.Response(
+            200,
+            json={
+                "TrafficInfo": {
+                    "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"},
+                    "row": [{}],
+                }
+            },
+        ),
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return responses.pop(0)
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulParseError, match="envelope"):
+            await client.traffic_info("link")
+        with pytest.raises(SeoulParseError, match="link_id"):
+            await client.traffic_info("link")
+
+
+@pytest.mark.asyncio
+async def test_citydata_info_200_is_an_empty_result(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "RESULT": {
+                    "RESULT.CODE": "INFO-200",
+                    "RESULT.MESSAGE": "데이터 없음",
+                }
+            },
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        result = await client.citydata("강남역")
+
+    assert result.items == ()
+    assert result.result_code == "INFO-200"
+
+
+@pytest.mark.asyncio
+async def test_all_station_endpoint_requires_opt_in_and_bounds_items(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "errorMessage": {"code": "INFO-000", "message": "정상"},
+                "realtimeArrivalList": [
+                    {"statnNm": "서울"},
+                    {"statnNm": "시청"},
+                ],
+            },
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulConfigurationError, match="명시적으로 활성화"):
+            await client.subway_arrivals_all()
+
+    all_config = config.model_copy(
+        update={"allow_all_station_arrivals": True, "all_station_arrivals_max_items": 1}
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=all_config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulParseError, match="최대 항목 수"):
+            await client.subway_arrivals_all()
+
+
+@pytest.mark.asyncio
+async def test_retry_after_cooldown_is_shared_between_clients(config):
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "0.05"})
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    first_config = config.model_copy(
+        update={"max_retries": 0, "general_min_interval_seconds": 0}
+    )
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as first_http:
+        first = SeoulOpenDataClient(config=first_config, http_client=first_http)
+        with pytest.raises(SeoulRateLimitError):
+            await first.traffic_info("link")
+
+    started = asyncio.get_running_loop().time()
+    async with httpx.AsyncClient(transport=transport) as second_http:
+        second = SeoulOpenDataClient(config=first_config, http_client=second_http)
+        result = await second.traffic_info("link")
+    elapsed = asyncio.get_running_loop().time() - started
+
+    assert result.items[0].link_id == "link"
+    assert elapsed >= 0.04
+
+
+def test_static_parking_holiday_and_coordinate_aliases_are_preserved():
+    envelope, items = parse_parking_lots(
+        {
+            "GetParkInfo": {
+                "list_total_count": 1,
+                "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"},
+                "row": [
+                    {
+                        "PKLT_CD": "P1",
+                        "PKLT_NM": "서울역",
+                        "LHLDY_BGNG": "00:00",
+                        "LHLDY": "23:59",
+                        "LOT": "126.97",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert envelope.list_total_count == 1
+    assert items[0].holiday_open_time == "00:00"
+    assert items[0].holiday_close_time == "23:59"
+    assert items[0].longitude == 126.97

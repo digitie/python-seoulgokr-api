@@ -2,7 +2,7 @@
 
 ## 현재 단계
 
-provider 1차 구현이 완료된 상태다. 이 runbook은 실제 인증키 신청·원격 공개·release
+provider 1차 구현과 공개 sample live smoke가 완료된 상태다. 이 runbook은 실제 인증키 신청·원격 공개·release
 전 검증 절차를 고정한다. 인증키 값 자체는 어느 단계에서도 저장하지 않는다.
 
 ## 구현 전 확인
@@ -14,12 +14,12 @@ provider 1차 구현이 완료된 상태다. 이 runbook은 실제 인증키 신
 
 ## 로컬 검증
 
-- [ ] WSL2에서 `pytest` unit/contract test
-- [ ] `mypy` 또는 동등한 typing 검사
-- [ ] `ruff check` 및 formatter 검사
-- [ ] package build와 clean environment install
-- [ ] secret scanner 및 key redaction 테스트
-- [ ] live smoke는 opt-in이며 결과·URL·응답에 key가 없어야 함
+- [x] WSL2에서 `pytest` unit/contract test
+- [x] `mypy` 또는 동등한 typing 검사
+- [x] `ruff check` 및 formatter 검사
+- [x] package build와 clean environment install
+- [x] secret scanner 및 key redaction 테스트
+- [x] live smoke는 opt-in이며 결과·URL·응답에 key가 없어야 함
 
 ## GitHub 절차
 
@@ -27,7 +27,7 @@ provider 1차 구현이 완료된 상태다. 이 runbook은 실제 인증키 신
 2. 관련 문서·fixture·테스트를 함께 커밋한다.
 3. 사용자의 승인 뒤 `github.com/digitie/python-seoulgokr-api` 원격을 생성/등록한다.
 4. main 직접 push 없이 push와 Draft PR을 사용한다.
-5. CI, James/Popper 적대적 리뷰, key leak 검사 후 merge한다.
+5. CI, 수정 후 James/Popper 적대적 리뷰, key leak 검사 후 merge한다.
 6. release 전에는 changelog와 package metadata를 확인한다.
 
 ## 장애 대응

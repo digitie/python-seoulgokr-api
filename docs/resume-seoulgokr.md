@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- provider 1차 구현 및 계약 테스트 완료
+- provider 1차 구현, 계약 테스트, 패키지 검증 및 공개 sample live smoke 완료
 - 대상 경로는 최초 확인 시 없었고 새 Git 저장소를 생성함
 - 브랜치: `codex/implement-seoulgokr-api`
 - `src/seoulgokr/`에 config, async transport, retry, limiter, redaction, parser,
@@ -24,6 +24,6 @@
 
 ## 다음 한 작업
 
-Draft PR #1에 대한 CI와 James/Popper 적대적 리뷰를 완료한 뒤, 실제 quota·HTTPS
-정책을 신청 후 live smoke에서 확인하고 결과를 문서에 갱신한다. P0/P1 blocker가
-없을 때만 사용자가 요청한 merge gate를 진행한다.
+수정 커밋을 push한 뒤 독립 James/Popper hostile review를 다시 실행하고, CI와
+live smoke 결과가 유지되면 PR #1을 Ready/merge한다. 실제 quota·HTTPS 지원은
+인증키 신청 후 별도 운영 task로 확인한다.

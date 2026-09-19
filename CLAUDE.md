@@ -1,5 +1,14 @@
 # CLAUDE.md — kor-travel-transport 진입 요약
 
+## python-seoulgokr-api 범위 보정
+
+이 저장소는 위 원 프로젝트의 구조와 문서를 복제한 독립 `seoulgokr` provider다. 이
+보정이 복제된 `kor-travel-transport` 애플리케이션 설명보다 우선한다. 작업 대상은
+`src/seoulgokr/`, `tests/`, `examples/`, `scripts/`, `docs/`, `pyproject.toml`이며,
+FastAPI/Next.js/Docker/PostgreSQL migration/UI를 이 저장소에 추가하지 않는다. provider는
+서울 OpenAPI 호출·파싱·quota 보호·원문 provenance만 책임지고, DB 저장과 scheduler는
+소비 프로젝트가 책임진다. `docs/*seoulgokr*`를 현재 구현 상태의 정본으로 사용한다.
+
 이 파일은 Claude Code와 Claude Agent가 가장 먼저 읽는 요약이다. 정식 정책은
 `AGENTS.md`, 상세 실행 규칙은 `SKILL.md`, 진행 상태는 `docs/resume.md`와
 `docs/tasks.md`가 갖는다.

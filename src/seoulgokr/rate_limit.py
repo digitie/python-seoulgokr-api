@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
+from typing import ClassVar
+from zoneinfo import ZoneInfo
 
 from .errors import SeoulQuotaError
 
@@ -27,6 +30,7 @@ class _ServiceState:
     last_started: float | None = None
     calls_today: int = 0
     call_date: object | None = None
+    cooldown_until: float | None = None
 
 
 class ServiceRateLimiter:
@@ -42,11 +46,34 @@ class ServiceRateLimiter:
         *,
         default_policy: RateLimitPolicy | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        timezone_name: str = "Asia/Seoul",
     ) -> None:
         self.default_policy = default_policy or RateLimitPolicy()
         self._sleep = sleep or asyncio.sleep
         self._states: dict[str, _ServiceState] = {}
         self._states_lock = asyncio.Lock()
+        self._timezone = ZoneInfo(timezone_name)
+
+    _shared: ClassVar[dict[tuple[str, int, str], ServiceRateLimiter]] = {}
+
+    @classmethod
+    def shared(cls, scope: str, *, timezone_name: str) -> ServiceRateLimiter:
+        """동일 key scope의 client가 process 내부 limiter를 공유한다."""
+
+        try:
+            loop_id = id(asyncio.get_running_loop())
+        except RuntimeError:
+            loop_id = 0
+        shared_key = (scope, loop_id, timezone_name)
+        limiter = cls._shared.get(shared_key)
+        if limiter is None:
+            limiter = cls(timezone_name=timezone_name)
+            cls._shared[shared_key] = limiter
+        return limiter
+
+    @staticmethod
+    def scope_for(*parts: str) -> str:
+        return hashlib.sha256("\x00".join(parts).encode()).hexdigest()
 
     async def _state(self, service: str) -> _ServiceState:
         async with self._states_lock:
@@ -55,6 +82,27 @@ class ServiceRateLimiter:
                 state = _ServiceState()
                 self._states[service] = state
             return state
+
+    async def cooldown(self, service: str, delay_seconds: float | None) -> None:
+        if delay_seconds is None or delay_seconds <= 0:
+            return
+        state = await self._state(service)
+        async with state.lock:
+            self._set_cooldown(state, delay_seconds)
+
+    def mark_cooldown(self, service: str, delay_seconds: float | None) -> None:
+        """현재 이벤트 루프 차례 안에서 다음 slot의 대기를 예약한다."""
+
+        if delay_seconds is None or delay_seconds <= 0:
+            return
+        state = self._states.get(service)
+        if state is not None:
+            self._set_cooldown(state, delay_seconds)
+
+    @staticmethod
+    def _set_cooldown(state: _ServiceState, delay_seconds: float) -> None:
+        until = time.monotonic() + delay_seconds
+        state.cooldown_until = max(state.cooldown_until or 0.0, until)
 
     @asynccontextmanager
     async def slot(
@@ -67,10 +115,12 @@ class ServiceRateLimiter:
             state.semaphore_limit = policy.max_concurrency
         async with state.semaphore:
             async with state.lock:
-                today = datetime.now(UTC).date()
-                if state.call_date != today:
-                    state.call_date = today
-                    state.calls_today = 0
+                if state.cooldown_until is not None:
+                    wait_for = state.cooldown_until - time.monotonic()
+                    if wait_for > 0:
+                        await self._sleep(wait_for)
+                    state.cooldown_until = None
+                self._rollover(state)
                 if (
                     policy.daily_budget is not None
                     and state.calls_today >= policy.daily_budget
@@ -78,15 +128,23 @@ class ServiceRateLimiter:
                     raise SeoulQuotaError(
                         f"서비스 {service}의 애플리케이션 일일 호출 예산({policy.daily_budget})을 소진했습니다"
                     )
+                wait_for = 0.0
                 if state.last_started is not None:
                     wait_for = policy.minimum_interval_seconds - (
                         time.monotonic() - state.last_started
                     )
-                    if wait_for > 0:
-                        await self._sleep(wait_for)
+                if wait_for > 0:
+                    await self._sleep(wait_for)
+                    self._rollover(state)
                 state.last_started = time.monotonic()
                 state.calls_today += 1
             try:
                 yield
             finally:
                 pass
+
+    def _rollover(self, state: _ServiceState) -> None:
+        today = datetime.now(self._timezone).date()
+        if state.call_date != today:
+            state.call_date = today
+            state.calls_today = 0

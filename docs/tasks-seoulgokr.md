@@ -5,7 +5,7 @@
 - [x] OA 식별자와 service registry 재확인
 - [x] OA-15799 일괄 endpoint의 현재 service path 확인
 - [ ] citydata 장소 목록 수(120/122)와 최신 목록 확인
-- [ ] HTTPS 지원·인증키 신청 경로·서비스별 quota 확인
+- [ ] HTTPS 지원·인증키 신청 경로·서비스별 quota 확인(신청 후)
 
 ## T-SG-002 — 공통 runtime
 
@@ -32,11 +32,11 @@
 - [x] quota/page-size guard test
 - [x] key leak regression test
 - [x] WSL2 test/lint/type/build
-- [ ] HTTP 429/5xx live-equivalent regression test 보강
+- [x] HTTP 429/5xx live-equivalent regression test 보강
 
 ## T-SG-005 — release 준비
 
 - [x] 사용 예제와 quota 주의사항
-- [ ] CI 및 secret scanner
-- [ ] hostile review
-- [ ] 사용자 승인 후 GitHub remote/Draft PR
+- [x] CI 및 secret scanner
+- [ ] 수정 후 hostile review 2회 재실행 및 P1 해소 확인
+- [x] 사용자 승인 후 GitHub remote/Draft PR

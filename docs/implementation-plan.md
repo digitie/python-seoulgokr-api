@@ -7,8 +7,8 @@ OpenAPI를 안전하게 호출하는 비동기 Python provider 라이브러리�
 국내 여행 서비스가 서울의 도로 소통, 지하철 도착·열차 위치, 서울 주요 장소의
 교통·주차 현황을 typed model로 소비할 수 있어야 한다.
 
-현재 1차 provider 구현이 완료됐다. 실제 API key를 사용한 live 호출은 하지 않았고,
-모든 검증은 공개 sample 응답과 key 없는 mock fixture로 수행했다.
+현재 1차 provider 구현과 공개 `sample` key live smoke가 완료됐다. 실키 값은 사용하거나
+저장하지 않았고, 계약 검증은 key 없는 mock fixture로 수행했다.
 
 ## 2. 범위
 
@@ -52,7 +52,6 @@ src/seoulgokr/
 ├── parsers/
 │   ├── common.py      # JSON/XML envelope 및 숫자/빈 문자열 변환
 │   └── ...            # API별 필드 정규화
-├── pagination.py     # inclusive start/end와 source별 예외
 ├── rate_limit.py     # service/key별 동시성·간격·quota budget
 ├── errors.py          # HTTP·upstream·quota·parse 예외
 └── redaction.py      # URL/headers/본문 로그 마스킹
@@ -69,7 +68,7 @@ src/seoulgokr/
 - 알 수 없는 필드는 버리지 않고 raw mapping에 보존한다. upstream이 필드를
   추가해도 파싱이 즉시 깨지지 않아야 한다.
 - 호출 결과는 `typed`와 `raw`를 함께 가지는 결과 객체로 설계한다.
-- `SeoulApiResult`에는 서비스명, format, 요청 범위, 수집 시각과 파싱된 원문 mapping을
+- `SeoulApiResult`에는 서비스명, 요청 범위, 수집 시각과 파싱된 원문 mapping을
   보존한다. `KEY`가 포함된 실제 URL은 redacted URL로만 반환하며 raw payload에도
   키를 넣지 않는다.
 - 응답의 `RESULT.CODE`/`RESULT.MESSAGE`가 HTTP 200 안에 오류를 표현할 수 있으므로
@@ -112,13 +111,12 @@ src/seoulgokr/
 
 ## 7. API key 보안
 
-- 신규 provider의 canonical 환경변수는 계획상
-  `SEOUL_OPEN_DATA_API_KEY=<placeholder>`로 둔다. 이름과 별칭은 구현 시작 전에
-  확정하고 `.env.example`에는 placeholder만 넣는다.
+- 신규 provider의 canonical 환경변수는 `SEOUL_OPEN_DATA_API_KEY=<placeholder>`로
+  확정했다. `kor-travel-map`의 공통 별칭도 값 없이 이름만 지원한다.
 - key는 `pydantic.SecretStr` 또는 동일 수준의 secret wrapper로 보관한다.
-- 공식 예제 URL이 key를 path에 넣는 HTTP 형식이므로, 운영 호출 전에 HTTPS 지원
-  여부와 인증키 전송 보호를 별도로 확인한다. HTTPS가 보장되지 않으면 public
-  browser 호출을 금지하고 backend egress/proxy만 허용한다.
+- 공식 예제 URL이 key를 path에 넣는 HTTP 형식이므로 기본값은 HTTP를 차단한다.
+  HTTPS proxy 또는 backend egress를 신뢰하는 운영 설정에서만 `allow_insecure_http=True`
+  를 명시한다. public browser 호출은 금지한다.
 - URL, exception, retry 로그, metrics label, trace attribute, fixture 이름에 key를
   넣지 않는다. `sample`이라는 공개 테스트 키도 운영 key처럼 redaction 경로를
   거친다.
@@ -157,8 +155,9 @@ live smoke test는 별도 opt-in 명령으로 두고, 결과에는 key·전체 U
 
 - [x] `docs/data-sources.md`의 최신 명세를 다시 확인
 - [x] OA 식별자와 service name registry 확정
-- [ ] canonical 환경변수명과 key 발급 절차 확정
-- [ ] HTTP/HTTPS 전송 정책 확정
+- [x] canonical 환경변수명과 local `kor-travel-map` 별칭 확정
+- [x] HTTP 기본 차단 및 backend 전용 opt-in 정책 확정
+- [ ] HTTPS 지원·실제 key 발급 quota 확인(신청 후 운영 작업)
 
 ### 단계 B — 공통 runtime
 
@@ -176,9 +175,9 @@ live smoke test는 별도 opt-in 명령으로 두고, 결과에는 key·전체 U
 ### 단계 D — 검증·문서
 
 - [x] fixture/contract/unit test
-- [ ] typing/lint/package build
-- [ ] opt-in live smoke 및 장애 기록
-- [ ] 소비 프로젝트 연동 예제(키 없는 mock 기준)
+- [x] typing/lint/package build/sdist metadata 검증
+- [x] opt-in sample live smoke 및 결과 기록
+- [x] 소비 프로젝트 연동 예제와 key 없는 mock 기준
 
 ## 10. release·push 계획
 

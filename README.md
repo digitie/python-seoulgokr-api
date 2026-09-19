@@ -13,6 +13,8 @@
 ```bash
 pip install seoulgokr
 export KOR_TRAVEL_MAP_API_DATAGOKR_SERVICE_KEY='<발급키>'
+# 공식 endpoint가 HTTP로만 문서화된 현재는 backend 전용으로 명시적 opt-in이 필요하다.
+export SEOUL_OPEN_DATA_ALLOW_INSECURE_HTTP=true
 ```
 
 `SEOUL_OPEN_DATA_API_KEY`를 canonical 이름으로 사용할 수 있으며,
@@ -45,6 +47,11 @@ asyncio.run(main())
 파싱된 원문 mapping이 담긴다. `fetched_at`과 upstream의 `recptnDt`/원천 시각은
 서로 다른 값으로 보존된다.
 
+전체역 도착(`OA-15799`)은 호출량과 응답 크기가 크므로 기본 비활성이다. 운영자가
+`allow_all_station_arrivals=True`와 `all_station_arrivals_max_items`를 함께 지정한
+경우에만 호출하며, `sample` 키는 사용할 수 없다. `INFO-200`은 빈 결과로 반환하고,
+`INFO-000`인데 필수 envelope나 식별 필드가 없는 응답은 파싱 오류로 거부한다.
+
 ## quota와 장애 처리
 
 - 일반 API 페이지 범위는 한 호출 1,000건 이하, `sample` 키는 5건 이하로 사전 차단한다.
@@ -55,8 +62,9 @@ asyncio.run(main())
 - timeout, HTTP 429/5xx, 네트워크 오류는 bounded retry를 사용한다. HTTP 200 본문의
   `ERROR-500/600/601`도 같은 방식으로 제한 재시도하며, `INFO-200`은 정상적인 빈
   결과로 반환한다.
-- 공식 endpoint가 HTTP 형태로 문서화되어 있으므로, 인증키를 브라우저에서 직접
-  호출하지 말고 backend egress/proxy에서만 사용한다. HTTPS 지원 여부와 실제
+- 공식 endpoint가 HTTP 형태로 문서화되어 있어 `allow_insecure_http` 기본값은
+  `False`다. backend egress/proxy를 명시적으로 신뢰하는 환경에서만 opt-in하고,
+  인증키를 브라우저에서 직접 호출하지 않는다. HTTPS 지원 여부와 실제
   서비스별 quota·reset 시각은 인증키 신청 후 운영자가 확인해야 한다.
 
 먼저 읽을 문서:

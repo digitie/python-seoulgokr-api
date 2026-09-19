@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from ..errors import SeoulParseError
 from ..models.citydata import CityData
 from ..models.parking import ParkingLot, ParkingRealtime
 from ..models.subway import SubwayArrival, SubwayPosition
@@ -26,17 +27,22 @@ def parse_traffic_info(
     payload: Mapping[str, Any],
 ) -> tuple[ParsedEnvelope, tuple[TrafficInfo, ...]]:
     envelope = extract_envelope(payload, service="TrafficInfo")
-    return envelope, tuple(
-        TrafficInfo(
-            link_id=text_value(row, "link_id", "LINK_ID"),
-            process_speed_kph=float_value(row, "prcs_spd", "PRCS_SPD"),
-            process_travel_time_seconds=int_value(
-                row, "prcs_trv_time", "PRCS_TRV_TIME"
-            ),
-            raw=dict(row),
+    items: list[TrafficInfo] = []
+    for row in envelope.rows:
+        link_id = text_value(row, "link_id", "LINK_ID")
+        if not link_id:
+            raise SeoulParseError("TrafficInfo row에 link_id가 없습니다")
+        items.append(
+            TrafficInfo(
+                link_id=link_id,
+                process_speed_kph=float_value(row, "prcs_spd", "PRCS_SPD"),
+                process_travel_time_seconds=int_value(
+                    row, "prcs_trv_time", "PRCS_TRV_TIME"
+                ),
+                raw=dict(row),
+            )
         )
-        for row in envelope.rows
-    )
+    return envelope, tuple(items)
 
 
 def parse_subway_arrivals(
@@ -121,10 +127,18 @@ def parse_parking_lots(
                 row, "SAT_OPR_END_TM", "WE_OPER_END_TM", "sat_opr_end_tm"
             ),
             holiday_open_time=text_value(
-                row, "LH_OPR_STRT_TM", "LHLDY_OPER_BGNG_TM", "holiday_open_time"
+                row,
+                "LH_OPR_STRT_TM",
+                "LHLDY_OPER_BGNG_TM",
+                "LHLDY_BGNG",
+                "holiday_open_time",
             ),
             holiday_close_time=text_value(
-                row, "LH_OPR_END_TM", "LHLDY_OPER_END_TM", "holiday_close_time"
+                row,
+                "LH_OPR_END_TM",
+                "LHLDY_OPER_END_TM",
+                "LHLDY",
+                "holiday_close_time",
             ),
             latitude=float_value(row, "LAT", "lat"),
             longitude=float_value(row, "LNG", "LOT", "lng"),
@@ -141,6 +155,8 @@ def parse_citydata(
     payload: Mapping[str, Any],
 ) -> tuple[ParsedEnvelope, tuple[CityData, ...]]:
     envelope = extract_citydata_envelope(payload, service="citydata")
+    if envelope.result_code == "INFO-200":
+        return envelope, ()
     data = envelope.service_payload
     live_population = first_value(data, "LIVE_PPLTN_STTS")
     live_population_row = (
@@ -152,14 +168,18 @@ def parse_citydata(
     )
     if not isinstance(live_population_row, Mapping):
         live_population_row = {}
+    if not data or not text_value(data, "AREA_NM", "area_nm"):
+        raise SeoulParseError("citydata INFO-000 응답에 CITYDATA 영역 정보가 없습니다")
     return envelope, (
         CityData(
             area_name=text_value(data, "AREA_NM", "area_nm"),
             area_code=text_value(data, "AREA_CD", "area_cd"),
             area_congestion_level=text_value(
-                live_population_row, "AREA_CONGEST_LV", "AREA_CONGEST_LVL"
-            ),
-            area_congestion_message=text_value(live_population_row, "AREA_CONGEST_MSG"),
+                data, "AREA_CONGEST_LV", "AREA_CONGEST_LVL"
+            )
+            or text_value(live_population_row, "AREA_CONGEST_LV", "AREA_CONGEST_LVL"),
+            area_congestion_message=text_value(data, "AREA_CONGEST_MSG")
+            or text_value(live_population_row, "AREA_CONGEST_MSG"),
             road_traffic=_raw_block(data, "ROAD_TRAFFIC_STTS", "ROAD_TRAFFIC"),
             parking=_raw_block(data, "PRK_STTS", "PARKING"),
             subway=_raw_block(data, "SUB_STTS", "SUBWAY"),

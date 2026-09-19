@@ -2,6 +2,16 @@
 
 ## 2026-09-19
 
+- `python-seoulgokr-api` 구현에서 공개 `sample` key live smoke(`TrafficInfo` 1건,
+  지하철 도착 5건, 모두 `INFO-000`)를 수행했다. 실키는 사용하지 않았고 출력에
+  key·전체 URL·원문 응답을 남기지 않았다.
+- 두 차례 적대적 리뷰에서 확인된 P1을 반영했다: HTTP fail-closed/opt-in, 서울 시간대
+  daily budget, 429 `Retry-After` 공유 cooldown, inclusive pagination, 전체역 응답 상한,
+  `INFO-200` 빈 결과, malformed envelope/필수 식별자 검증, sdist 내부 문서 제외.
+- WSL2에서 Ruff, mypy, pytest 18개, wheel/sdist build, `twine check`, clean wheel
+  install을 통과시켰고 secret scanner도 통과했다. 수정 후 James/Popper 독립 리뷰와
+  CI를 재실행한 뒤 PR #1 merge gate를 진행한다.
+
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부
   통계로 즉시 제공하는 방향을 공통 문서와 현재 구현에 반영했다.

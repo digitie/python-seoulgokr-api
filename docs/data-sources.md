@@ -50,10 +50,10 @@ quota와 분당 rate limit을 이 숫자에서 추정하지 않는다.
 | 1 | 서울시 실시간 도로 소통 정보 `OA-13291` | `TrafficInfo`<br>`http://openapi.seoul.go.kr:8088/{KEY}/xml/TrafficInfo/1/5/{LINK_ID}` | XML 중심. `LINK_ID`, `PRCS_SPD`, `PRCS_TRV_TIME` 및 공통 envelope | 공식 메타데이터: `비정기(수시) - 실시간/매일`. 링크별 조회라 link registry/캐시 필요 | 1차 후보 |
 | 1 | 서울시 지하철 실시간 도착정보 `OA-12764` | `realtimeStationArrival`<br>`http://swopenAPI.seoul.go.kr/api/subway/{KEY}/json/realtimeStationArrival/0/5/{역명}` | `subwayId`, `updnLine`, `trainLineNm`, `statnNm`, `barvlDt`, `btrainNo`, `recptnDt`, `arvlMsg2`, `arvlMsg3`, `arvlCd`, `lstcarAt` | 역명 필수. `recptnDt`와 현재 시각 사이의 원천 처리 지연을 반영해야 함. 서울 외 역구간 미제공 | 1차 후보 |
 | 1 | 서울시 지하철 실시간 열차 위치정보 `OA-12601` | `realtimePosition`<br>`http://swopenAPI.seoul.go.kr/api/subway/{KEY}/json/realtimePosition/0/5/{호선명}` | `subwayId`, `subwayNm`, `statnId`, `statnNm`, `trainNo`, `lastRecptnDt`, `recptnDt`, `updnLine`, `statnTnm`, `trainSttus`, `directAt`, `lstcarAt` | 노선 단위 조회. 도착 API와 `trainNo` 연결 가능성을 fixture로 확인 | 1차 후보 |
-| 1 | 서울시 지하철 실시간 도착정보(일괄) `OA-15799` | service `realtimeStationArrival/ALL`. `http://swopenAPI.seoul.go.kr/api/subway/{KEY}/json/realtimeStationArrival/ALL` 형태 | 역별 API와 동일 계열 필드. 현재 provider는 pagination 없는 endpoint로 호출 | 전체역 응답은 크고 quota를 빠르게 소모할 수 있어 기본 30초 간격·daily budget을 적용 | 구현 |
+| 1 | 서울시 지하철 실시간 도착정보(일괄) `OA-15799` | service `realtimeStationArrival/ALL`. `http://swopenAPI.seoul.go.kr/api/subway/{KEY}/json/realtimeStationArrival/ALL` 형태 | 역별 API와 동일 계열 필드. 현재 provider는 pagination 없는 endpoint로 호출 | 전체역 응답은 크고 quota를 빠르게 소모할 수 있어 기본 30초 간격·daily budget·명시적 opt-in을 적용 | 구현 |
 | 1 | 서울시 시영주차장 실시간 주차대수 정보 `OA-21709` | `GetParkingInfo`<br>`http://openapi.seoul.go.kr:8088/{KEY}/json/GetParkingInfo/1/1000/{ADDR}` | `PKLT_CD`, `PKLT_NM`, `ADDR`, `TPKCT`, `NOW_PRK_VHCL_CNT`, `NOW_PRK_VHCL_UPDT_TM`, 운영·요금 필드 및 공통 envelope | 공식 설명은 실제 정보가 5분 이상 지연될 수 있다고 안내. 메타 갱신주기는 `비정기(자료변경시)` | 1차 후보 |
 | 2 | 서울시 공영주차장 안내 정보 `OA-13122` | `GetParkInfo`<br>`http://openapi.seoul.go.kr:8088/{KEY}/json/GetParkInfo/1/1000/{ADDR}` | `PKLT_NM`, `ADDR`, `PKLT_CD`, `TPKCT`, 운영·요금·좌표·`LAST_DATA_SYNC_TM` 등 | 정적 기준정보 역할. 공식 FAQ는 현재 주차대수(`cur_parking`) 컬럼 삭제를 안내하므로 실시간 수치 계약으로 사용하지 않음 | 1차 후보 |
-| 2 | 서울시 실시간 도시데이터 `OA-21285` | `citydata`<br>`http://openapi.seoul.go.kr:8088/{KEY}/xml/citydata/1/5/{AREA_NM}` | 장소·혼잡·도로·주차·지하철 등 block. `AREA_NM`, `AREA_CD`, `ROAD_TRAFFIC_*`, `PRK_*`, `SUB_*` 등 | 한 번에 한 장소만 호출. 샘플 키는 광화문·덕수궁만 가능. 장소 목록 변경 이력 존재 | 조건부 후보 |
+| 2 | 서울시 실시간 도시데이터 `OA-21285` | `citydata`<br>`http://openapi.seoul.go.kr:8088/{KEY}/xml/citydata/1/5/{AREA_NM}` | 장소·혼잡·도로·주차·지하철 등 block. `AREA_NM`, `AREA_CD`, `ROAD_TRAFFIC_*`, `PRK_*`, `SUB_*` 등 | 한 번에 한 장소만 호출. 샘플 키는 요청 장소를 보장하지 않아 provider가 거부한다. 장소 목록 변경 이력 존재 | 구현 |
 
 ## API별 세부 확인
 
@@ -62,7 +62,7 @@ quota와 분당 rate limit을 이 숫자에서 추정하지 않는다.
 - 데이터셋: [OA-13291](https://data.seoul.go.kr/dataList/OA-13291/A/1/datasetView.do)
 - 명세: [OA-13291 OpenAPI 명세](https://data.seoul.go.kr/dataList/openApiView.do?infId=OA-13291&srvType=A)
 - 샘플: `http://openapi.seoul.go.kr:8088/sample/xml/TrafficInfo/1/5/1220003800`
-- 공식 명세는 `TYPE=xml`만 제시한다. JSON을 당연히 지원한다고 가정하지 않는다.
+- 공식 명세는 `TYPE=xml`을 제시하므로 provider는 현재 `TrafficInfo`를 XML만 허용한다.
 - link id별로 조회하므로 `표준링크 매핑정보`, `소통 돌발 링크` 등 연관 데이터와
   함께 link registry를 관리해야 한다.
 

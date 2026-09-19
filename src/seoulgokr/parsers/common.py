@@ -50,24 +50,12 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
 
 def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvelope:
     service_payload = _unwrap_service(payload, service)
-    result_code, result_message = _extract_result(payload, service_payload)
-    list_total_value = _first_value(
-        service_payload, "list_total_count", "totalCount", "total", "TOTAL_COUNT"
-    )
-    if list_total_value is None:
-        list_total_value = _first_value(
-            payload, "list_total_count", "totalCount", "total"
+    if not _has_envelope_marker(payload, service_payload, service=service):
+        raise SeoulParseError(
+            f"{service} 응답에 서울 Open API envelope 표식이 없습니다"
         )
-    if list_total_value is None:
-        for result_name in ("errorMessage", "RESULT"):
-            result_mapping = _mapping_value(payload, result_name)
-            if result_mapping is not None:
-                list_total_value = _first_value(
-                    result_mapping, "list_total_count", "totalCount", "total"
-                )
-                if list_total_value is not None:
-                    break
-    list_total_count = _int_or_none(list_total_value)
+    result_code, result_message = _extract_result(payload, service_payload)
+    list_total_count = _list_total_count(payload, service_payload)
     rows = _extract_rows(service_payload)
     if result_code and result_code != "INFO-000":
         if result_code == "INFO-200":
@@ -94,6 +82,10 @@ def extract_citydata_envelope(
     """row가 없는 citydata 응답도 공통 오류 규칙으로 검사한다."""
 
     service_payload = _unwrap_service(payload, service)
+    if not _has_citydata_marker(payload, service_payload):
+        raise SeoulParseError(
+            "citydata 응답에 CITYDATA 또는 서울 Open API 결과 표식이 없습니다"
+        )
     result_code, result_message = _extract_result(payload, service_payload)
     if result_code and result_code not in {"INFO-000", "INFO-200"}:
         raise SeoulUpstreamError(
@@ -105,7 +97,7 @@ def extract_citydata_envelope(
         payload=payload,
         service_payload=service_payload,
         rows=(),
-        list_total_count=None,
+        list_total_count=_list_total_count(payload, service_payload),
         result_code=result_code,
         result_message=result_message,
     )
@@ -185,6 +177,57 @@ def _unwrap_service(payload: Mapping[str, Any], service: str) -> Mapping[str, An
     return payload
 
 
+def _has_envelope_marker(
+    payload: Mapping[str, Any], service_payload: Mapping[str, Any], *, service: str
+) -> bool:
+    if isinstance(first_value(payload, service), Mapping):
+        return bool(service_payload)
+    for name in (
+        "RESULT",
+        "errorMessage",
+        "list_total_count",
+        "totalCount",
+        "row",
+        "realtimeArrivalList",
+        "realtimePositionList",
+        "GetParkingInfo",
+        "GetParkInfo",
+    ):
+        if first_value(payload, name) is not None:
+            return True
+        if (
+            service_payload is payload
+            and first_value(service_payload, name) is not None
+        ):
+            return True
+    return False
+
+
+def _has_citydata_marker(
+    payload: Mapping[str, Any], service_payload: Mapping[str, Any]
+) -> bool:
+    if isinstance(first_value(payload, "CITYDATA"), Mapping):
+        return True
+    for name in (
+        "RESULT",
+        "errorMessage",
+        "list_total_count",
+        "AREA_NM",
+        "LIVE_PPLTN_STTS",
+        "ROAD_TRAFFIC_STTS",
+        "PRK_STTS",
+        "SUB_STTS",
+    ):
+        if first_value(payload, name) is not None:
+            return True
+        if (
+            service_payload is payload
+            and first_value(service_payload, name) is not None
+        ):
+            return True
+    return False
+
+
 def _extract_result(
     payload: Mapping[str, Any], service_payload: Mapping[str, Any]
 ) -> tuple[str | None, str | None]:
@@ -202,6 +245,14 @@ def _extract_result(
             message = text_value(result, "MESSAGE", "message", "RESULT.MESSAGE")
             if code:
                 return code, message
+    direct_code = text_value(
+        service_payload, "RESULT.CODE", "RESULT_CODE", "resultCode"
+    ) or text_value(payload, "RESULT.CODE", "RESULT_CODE", "resultCode")
+    direct_message = text_value(
+        service_payload, "RESULT.MESSAGE", "RESULT_MESSAGE", "resultMessage"
+    ) or text_value(payload, "RESULT.MESSAGE", "RESULT_MESSAGE", "resultMessage")
+    if direct_code:
+        return direct_code, direct_message
     code = text_value(service_payload, "code", "CODE") or text_value(
         payload, "code", "CODE"
     )
@@ -236,6 +287,26 @@ def _mapping_value(mapping: Mapping[str, Any], name: str) -> Mapping[str, Any] |
 
 def _first_value(mapping: Mapping[str, Any], *names: str) -> Any:
     return first_value(mapping, *names)
+
+
+def _list_total_count(
+    payload: Mapping[str, Any], service_payload: Mapping[str, Any]
+) -> int | None:
+    value = _first_value(
+        service_payload, "list_total_count", "totalCount", "total", "TOTAL_COUNT"
+    )
+    if value is None:
+        value = _first_value(payload, "list_total_count", "totalCount", "total")
+    if value is None:
+        for result_name in ("errorMessage", "RESULT"):
+            result_mapping = _mapping_value(payload, result_name)
+            if result_mapping is not None:
+                value = _first_value(
+                    result_mapping, "list_total_count", "totalCount", "total"
+                )
+                if value is not None:
+                    break
+    return _int_or_none(value)
 
 
 def _int_or_none(value: Any) -> int | None:

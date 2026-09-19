@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import random
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -45,6 +46,14 @@ class AsyncSeoulTransport:
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
+        if not config.allow_insecure_http and (
+            config.general_base_url.startswith("http://")
+            or config.subway_base_url.startswith("http://")
+        ):
+            raise SeoulConfigurationError(
+                "서울 Open API 공식 endpoint가 HTTP이므로 기본적으로 차단했습니다. "
+                "HTTPS proxy를 사용하거나 backend 전용 설정에서 allow_insecure_http=True를 명시하세요"
+            )
         self._client = http_client or httpx.AsyncClient(
             timeout=httpx.Timeout(config.timeout_seconds),
             headers={
@@ -54,7 +63,15 @@ class AsyncSeoulTransport:
         )
         self._owns_client = http_client is None
         self._sleep = sleep or asyncio.sleep
-        self._limiter = limiter or ServiceRateLimiter()
+        self._limiter = limiter or ServiceRateLimiter.shared(
+            ServiceRateLimiter.scope_for(
+                config.api_key.get_secret_value() if config.api_key else "",
+                config.subway_key.get_secret_value() if config.subway_key else "",
+                config.general_base_url,
+                config.subway_base_url,
+            ),
+            timezone_name=config.quota_timezone,
+        )
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -74,6 +91,10 @@ class AsyncSeoulTransport:
         if api not in {"general", "subway"}:
             raise ValueError("api는 general 또는 subway여야 합니다")
         key = self.config.api_key if api == "general" else self.config.subway_key
+        if key is None:
+            raise SeoulConfigurationError(
+                f"{api} API 호출에 필요한 인증키가 설정되지 않았습니다"
+            )
         base_url = (
             self.config.general_base_url
             if api == "general"
@@ -86,16 +107,35 @@ class AsyncSeoulTransport:
                 )
             _validate_pagination(
                 api=api,
+                service=service,
                 key=key.get_secret_value(),
                 start_index=start_index,
                 end_index=end_index,
             )
-        path_parts = [key.get_secret_value(), response_format, service]
+        path_parts: list[tuple[str, bool]] = [
+            (key.get_secret_value(), False),
+            (response_format, False),
+            (service, True),
+        ]
         if include_pagination:
-            path_parts.extend([str(start_index), str(end_index), filter_value or ""])
+            path_parts.extend(
+                [
+                    (str(start_index), False),
+                    (str(end_index), False),
+                    (filter_value or "", False),
+                ]
+            )
         elif filter_value:
-            path_parts.append(filter_value)
-        url = "/".join([base_url, *(quote(part, safe="/") for part in path_parts)])
+            path_parts.append((filter_value, False))
+        url = "/".join(
+            [
+                base_url,
+                *(
+                    quote(part, safe="/" if allow_slash else "")
+                    for part, allow_slash in path_parts
+                ),
+            ]
+        )
         request_info = safe_request("GET", url, secrets=(key.get_secret_value(),))
         minimum, daily_budget = self.config.policy_for(service)
         policy = RateLimitPolicy(
@@ -103,7 +143,9 @@ class AsyncSeoulTransport:
             daily_budget=daily_budget,
             max_concurrency=self.config.max_concurrency,
         )
-        return await self._request_with_retry(url, request_info, service, policy)
+        return await self._request_with_retry(
+            url, request_info, self.config.quota_group(service), policy
+        )
 
     async def _request_with_retry(
         self,
@@ -128,12 +170,30 @@ class AsyncSeoulTransport:
                     ) from exc
                 await self._backoff(attempt)
                 continue
-            if response.status_code == 429 or response.status_code in {
-                500,
-                502,
-                503,
-                504,
-            }:
+            if response.status_code == 429:
+                retry_after = _retry_after_seconds(response.headers)
+                self._limiter.mark_cooldown(service, retry_after)
+                if (
+                    retry_after is not None
+                    and retry_after > self.config.retry_backoff_max_seconds
+                ):
+                    raise SeoulRateLimitError(
+                        "서울 Open API가 지정한 Retry-After가 너무 길어 재시도를 중단했습니다",
+                        retry_after=retry_after,
+                        status_code=429,
+                        request=request_info,
+                    )
+                last_error = SeoulRateLimitError(
+                    f"서울 Open API 일시 오류 HTTP {response.status_code}",
+                    retry_after=retry_after,
+                    status_code=429,
+                    request=request_info,
+                )
+                if attempt + 1 < attempts:
+                    await self._backoff(attempt, retry_after=retry_after)
+                    continue
+                raise last_error
+            if response.status_code in {500, 502, 503, 504}:
                 last_error = SeoulRateLimitError(
                     f"서울 Open API 일시 오류 HTTP {response.status_code}"
                 )
@@ -168,7 +228,7 @@ class AsyncSeoulTransport:
 
     async def _backoff(self, attempt: int, *, retry_after: float | None = None) -> None:
         if retry_after is not None:
-            delay = min(retry_after, self.config.retry_backoff_max_seconds)
+            delay = retry_after
         else:
             base = self.config.retry_backoff_seconds * (2**attempt)
             delay = min(
@@ -184,7 +244,8 @@ def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
     if not value:
         return None
     try:
-        return max(0.0, float(value))
+        parsed = float(value)
+        return max(0.0, parsed) if math.isfinite(parsed) else None
     except ValueError:
         try:
             when = parsedate_to_datetime(value)
@@ -196,16 +257,21 @@ def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
 
 
 def _validate_pagination(
-    *, api: str, key: str, start_index: int, end_index: int
+    *, api: str, service: str, key: str, start_index: int, end_index: int
 ) -> None:
     minimum = 1 if api == "general" else 0
     if start_index < minimum or end_index < start_index:
         raise SeoulConfigurationError(
             f"{api} API pagination이 올바르지 않습니다: start={start_index}, end={end_index}"
         )
-    if end_index - start_index > 1000:
+    page_size = (
+        end_index - start_index if api == "subway" else end_index - start_index + 1
+    )
+    if page_size < 1 or page_size > 1000:
         raise SeoulConfigurationError(
-            "서울 Open API 한 호출의 페이지 범위는 1,000건 이하이어야 합니다"
+            "서울 Open API 한 호출의 페이지 범위는 1~1,000건이어야 합니다"
         )
-    if key == "sample" and end_index - start_index > 5:
+    if key == "sample" and api == "subway" and (start_index != 0 or end_index > 5):
+        raise SeoulQuotaError("sample 지하철 키는 0..5 범위만 요청할 수 있습니다")
+    if key == "sample" and api == "general" and page_size > 5:
         raise SeoulQuotaError("sample 인증키는 한 호출에 최대 5건만 요청할 수 있습니다")

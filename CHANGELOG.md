@@ -2,6 +2,8 @@
 
 ## 다음 릴리스
 
+- HTTP 기본 차단, `Retry-After` 공유 cooldown, envelope 검증, 전체역 opt-in과
+  clean-install/secret-scan CI gate를 추가했다.
 - 서울시 실시간 도로 소통, 지하철 도착·열차 위치·전체역 도착, 공영주차장,
   서울 실시간 도시데이터 provider facade 추가
 - JSON/XML 공통 envelope, typed model, raw provenance, timeout/retry/backoff 추가

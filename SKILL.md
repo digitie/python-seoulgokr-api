@@ -1,5 +1,14 @@
 # SKILL — kor-travel-transport 에이전트 매뉴얼
 
+## python-seoulgokr-api 범위 보정
+
+복제된 원 프로젝트 규칙 중 provider 범위와 충돌하는 항목은 이 보정을 따른다. 이
+저장소는 `src/seoulgokr` 비동기 provider 라이브러리이며, `tests/` 계약 테스트와
+`examples/` live smoke를 함께 유지한다. PostgreSQL/Alembic/웹앱/Docker 구현은 하지
+않고, 서울 OpenAPI의 응답 파싱, key redaction, 호출 간격, daily budget, bounded retry,
+공식 quota 주의사항을 코드와 문서에 반영한다. 검증 표준은 `uv sync --locked --extra dev`,
+Ruff, mypy, pytest, wheel/sdist build다.
+
 ## 1. 작업 원칙
 
 - 사용자 요청과 `AGENTS.md`를 최우선으로 따른다.

@@ -14,6 +14,7 @@ async def main() -> None:
         realtime_min_interval_seconds=0,
         max_retries=0,
         timeout_seconds=15,
+        allow_insecure_http=True,
     )
     async with SeoulOpenDataClient(config=config) as client:
         traffic = await client.traffic_info("1220003800")

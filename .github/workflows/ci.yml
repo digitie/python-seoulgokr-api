@@ -26,6 +26,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Scan tracked files for key literals
+        run: python scripts/check_no_secrets.py
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -43,5 +46,19 @@ jobs:
       - name: Test
         run: uv run --locked --extra dev python -m pytest -q
 
+      - name: Run transport regression tests
+        run: uv run --locked --extra dev python -m pytest -q tests/test_client.py tests/test_limits.py
+
       - name: Build distributions
         run: uv run --locked --extra dev python -m build --wheel --sdist
+
+      - name: Validate distributions
+        run: uv run --locked --extra dev python -m twine check dist/*
+
+      - name: Clean wheel installation smoke
+        shell: bash
+        run: |
+          rm -rf /tmp/seoulgokr-clean
+          uv venv /tmp/seoulgokr-clean/venv
+          uv pip install --python /tmp/seoulgokr-clean/venv/bin/python dist/*.whl
+          /tmp/seoulgokr-clean/venv/bin/python -c "import seoulgokr; print(seoulgokr.SeoulOpenDataClient.__name__)"

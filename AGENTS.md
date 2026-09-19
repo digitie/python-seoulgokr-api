@@ -1,5 +1,18 @@
 # AGENTS.md
 
+## python-seoulgokr-api 범위 보정
+
+이 저장소는 `kor-travel-transport`의 구조·문서·에이전트 진입 규칙을 요청에 따라
+복제한 독립 provider 라이브러리다. 아래 범위 보정은 복제된 원문보다 우선한다.
+
+- 대상은 `src/seoulgokr/`, `tests/`, `examples/`, `scripts/`, `docs/`, `pyproject.toml`이다.
+- FastAPI, Next.js, Docker Compose, PostgreSQL migration, `parking-radar` UI는 이 저장소의
+  구현 범위가 아니다. provider는 typed 결과와 원문 provenance를 반환하고 저장 scheduler와
+  DB adapter는 소비 프로젝트가 소유한다.
+- 검증은 `uv` 기반 Ruff, mypy, pytest, build 및 공식 sample live smoke를 사용한다.
+- 이 저장소의 복제 문서는 구조와 운영 참고용이며, `docs/*seoulgokr*` 문서와 이 보정의
+  provider 범위 설명을 실제 작업 기준으로 삼는다.
+
 > **OpenAI Codex / Google Antigravity** 등 `AGENTS.md` 컨벤션을 따르는 AI agent는 본
 > 파일을 entry로 사용한다. Claude Code는 별도 `CLAUDE.md`(1쪽 요약)가 있으나 정식
 > 정책·결정은 본 파일·`SKILL.md`가 갖는다. 이 저장소는 `CLAUDE.md` + `AGENTS.md` 두 파일만

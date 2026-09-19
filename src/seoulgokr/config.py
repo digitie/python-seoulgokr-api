@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from typing import ClassVar
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
@@ -20,7 +21,7 @@ class SeoulOpenDataConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    api_key: SecretStr
+    api_key: SecretStr | None = None
     subway_api_key: SecretStr | None = None
     general_base_url: str = "http://openapi.seoul.go.kr:8088"
     subway_base_url: str = "http://swopenAPI.seoul.go.kr/api/subway"
@@ -33,6 +34,10 @@ class SeoulOpenDataConfig(BaseModel):
     max_concurrency: int = Field(default=1, ge=1, le=20)
     default_daily_budget: int | None = Field(default=None, ge=1)
     service_daily_budgets: dict[str, int] = Field(default_factory=dict)
+    quota_timezone: str = "Asia/Seoul"
+    allow_insecure_http: bool = False
+    allow_all_station_arrivals: bool = False
+    all_station_arrivals_max_items: int = Field(default=5000, gt=0)
     user_agent: str = "python-seoulgokr-api/0.1"
 
     _KEY_ENV_NAMES: ClassVar[tuple[str, ...]] = (
@@ -66,6 +71,22 @@ class SeoulOpenDataConfig(BaseModel):
             raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
         return value.rstrip("/")
 
+    @field_validator("service_daily_budgets")
+    @classmethod
+    def _positive_service_budgets(cls, value: dict[str, int]) -> dict[str, int]:
+        if any(budget <= 0 for budget in value.values()):
+            raise ValueError("service_daily_budgets 값은 양수여야 합니다")
+        return value
+
+    @field_validator("quota_timezone")
+    @classmethod
+    def _valid_quota_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"알 수 없는 quota timezone입니다: {value}") from exc
+        return value
+
     @classmethod
     def from_env(
         cls, *, api_key: str | SecretStr | None = None, **overrides: object
@@ -78,11 +99,6 @@ class SeoulOpenDataConfig(BaseModel):
         """
 
         key = api_key if api_key is not None else _first_env(cls._KEY_ENV_NAMES)
-        if not key:
-            names = ", ".join(cls._KEY_ENV_NAMES)
-            raise SeoulConfigurationError(
-                f"서울 Open API 인증키가 없습니다. 다음 환경변수 중 하나를 설정하세요: {names}"
-            )
         subway_key = overrides.pop("subway_api_key", None)
         if subway_key is None:
             subway_key = _first_env(cls._SUBWAY_KEY_ENV_NAMES)
@@ -90,15 +106,25 @@ class SeoulOpenDataConfig(BaseModel):
         values["api_key"] = key
         if subway_key is not None:
             values["subway_api_key"] = subway_key
+        if "allow_insecure_http" not in values:
+            insecure = os.getenv("SEOUL_OPEN_DATA_ALLOW_INSECURE_HTTP")
+            if insecure is not None:
+                values["allow_insecure_http"] = insecure
+        if not key and not subway_key:
+            names = ", ".join((*cls._KEY_ENV_NAMES, *cls._SUBWAY_KEY_ENV_NAMES[:2]))
+            raise SeoulConfigurationError(
+                f"서울 Open API 인증키가 없습니다. 다음 환경변수 중 하나를 설정하세요: {names}"
+            )
         return cls.model_validate(values)
 
     @property
-    def subway_key(self) -> SecretStr:
+    def subway_key(self) -> SecretStr | None:
         return self.subway_api_key or self.api_key
 
     def policy_for(self, service: str) -> tuple[float, int | None]:
         """서비스별 최소 간격과 애플리케이션 예산을 반환한다."""
 
+        service = self.quota_group(service)
         realtime = service.startswith("realtime")
         minimum = (
             self.realtime_min_interval_seconds
@@ -107,6 +133,12 @@ class SeoulOpenDataConfig(BaseModel):
         )
         budget = self.service_daily_budgets.get(service, self.default_daily_budget)
         return minimum, budget
+
+    @staticmethod
+    def quota_group(service: str) -> str:
+        if service == "realtimeStationArrival/ALL":
+            return "realtimeStationArrival"
+        return service
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:
