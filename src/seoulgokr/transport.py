@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .config import SeoulOpenDataConfig
+from .config import SeoulOpenDataConfig, validate_base_url
 from .errors import (
     SeoulConfigurationError,
     SeoulGokrError,
@@ -57,27 +57,6 @@ class AsyncSeoulTransport:
         self._sleep = sleep or asyncio.sleep
         self._provided_limiter = limiter
         self._limiters: dict[str, ServiceRateLimiter] = {}
-        if limiter is None:
-            self._limiters = {
-                "general": ServiceRateLimiter.shared(
-                    ServiceRateLimiter.scope_for(
-                        config.api_key.get_secret_value() if config.api_key else "",
-                        config.general_base_url,
-                    ),
-                    timezone_name=config.quota_timezone,
-                    max_concurrency=config.max_concurrency,
-                ),
-                "subway": ServiceRateLimiter.shared(
-                    ServiceRateLimiter.scope_for(
-                        config.subway_key.get_secret_value()
-                        if config.subway_key
-                        else "",
-                        config.subway_base_url,
-                    ),
-                    timezone_name=config.quota_timezone,
-                    max_concurrency=config.max_concurrency,
-                ),
-            }
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -111,6 +90,7 @@ class AsyncSeoulTransport:
                 if api == "general"
                 else self.config.subway_base_url
             )
+            base_url = validate_base_url(base_url)
             if base_url.startswith("http://") and not self.config.allow_insecure_http:
                 raise SeoulConfigurationError(
                     "서울 Open API 공식 endpoint가 HTTP이므로 기본적으로 차단했습니다. "
@@ -176,7 +156,31 @@ class AsyncSeoulTransport:
     def _limiter_for(self, api: str) -> ServiceRateLimiter:
         if self._provided_limiter is not None:
             return self._provided_limiter
-        return self._limiters[api]
+        limiter = self._limiters.get(api)
+        if limiter is None:
+            if api == "general":
+                key = (
+                    self.config.api_key.get_secret_value()
+                    if self.config.api_key
+                    else ""
+                )
+                base_url = self.config.general_base_url
+            elif api == "subway":
+                key = (
+                    self.config.subway_key.get_secret_value()
+                    if self.config.subway_key
+                    else ""
+                )
+                base_url = self.config.subway_base_url
+            else:
+                raise ValueError("api는 general 또는 subway여야 합니다")
+            limiter = ServiceRateLimiter.shared(
+                ServiceRateLimiter.scope_for(key, base_url),
+                timezone_name=self.config.quota_timezone,
+                max_concurrency=self.config.max_concurrency,
+            )
+            self._limiters[api] = limiter
+        return limiter
 
     def mark_cooldown(
         self, *, api: str, service: str, delay_seconds: float | None
@@ -230,10 +234,27 @@ class AsyncSeoulTransport:
                                 response_headers = dict(response.headers)
                                 response_content = b""
                                 if 200 <= response_status < 300:
+                                    content_length = _content_length(response_headers)
+                                    if (
+                                        content_length is not None
+                                        and content_length
+                                        > self.config.max_response_bytes
+                                    ):
+                                        response = None
+                                        raise SeoulHttpError(
+                                            413,
+                                            "서울 Open API 응답이 허용된 크기를 초과했습니다",
+                                            request=request_info,
+                                        )
                                     chunks: list[bytes] = []
                                     total_bytes = 0
                                     try:
-                                        async for chunk in response.aiter_bytes():
+                                        async for chunk in response.aiter_bytes(
+                                            chunk_size=min(
+                                                64 * 1024,
+                                                self.config.max_response_bytes,
+                                            )
+                                        ):
                                             total_bytes += len(chunk)
                                             if (
                                                 total_bytes
@@ -395,6 +416,17 @@ def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
         if when.tzinfo is None:
             when = when.replace(tzinfo=UTC)
         return max(0.0, (when - datetime.now(UTC)).total_seconds())
+
+
+def _content_length(headers: Mapping[str, str]) -> int | None:
+    value = headers.get("content-length") or headers.get("Content-Length")
+    if not value:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError:
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def _validate_pagination(

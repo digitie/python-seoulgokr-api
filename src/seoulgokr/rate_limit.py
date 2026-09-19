@@ -27,6 +27,7 @@ class _ServiceState:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     semaphore: asyncio.Semaphore | None = None
     semaphore_limit: int | None = None
+    policy: RateLimitPolicy | None = None
     last_started: float | None = None
     calls_today: int = 0
     call_date: object | None = None
@@ -56,7 +57,7 @@ class ServiceRateLimiter:
         self._states_lock = asyncio.Lock()
         self._timezone = ZoneInfo(timezone_name)
 
-    _shared: ClassVar[dict[tuple[str, int, str, int], ServiceRateLimiter]] = {}
+    _shared: ClassVar[dict[tuple[str, int, str], ServiceRateLimiter]] = {}
 
     @classmethod
     def shared(
@@ -64,11 +65,8 @@ class ServiceRateLimiter:
     ) -> ServiceRateLimiter:
         """동일 key scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
 
-        try:
-            loop_id = id(asyncio.get_running_loop())
-        except RuntimeError:
-            loop_id = 0
-        shared_key = (scope, loop_id, timezone_name, max_concurrency)
+        loop_id = id(asyncio.get_running_loop())
+        shared_key = (scope, loop_id, timezone_name)
         limiter = cls._shared.get(shared_key)
         if limiter is None:
             limiter = cls(
@@ -76,6 +74,10 @@ class ServiceRateLimiter:
                 timezone_name=timezone_name,
             )
             cls._shared[shared_key] = limiter
+        elif limiter.default_policy.max_concurrency != max_concurrency:
+            raise ValueError(
+                "동일 credential scope의 max_concurrency 정책이 충돌합니다"
+            )
         return limiter
 
     @staticmethod
@@ -118,14 +120,16 @@ class ServiceRateLimiter:
         policy = policy or self.default_policy
         state = await self._state(service)
         async with state.lock:
-            if state.semaphore is None:
+            if state.policy is None:
+                state.policy = policy
                 state.semaphore = asyncio.Semaphore(policy.max_concurrency)
                 state.semaphore_limit = policy.max_concurrency
-            elif state.semaphore_limit != policy.max_concurrency:
+            elif state.policy != policy:
                 raise ValueError(
-                    "동일 limiter의 max_concurrency 정책을 변경할 수 없습니다"
+                    "동일 limiter service의 호출 정책(max_concurrency 포함)이 충돌합니다"
                 )
             semaphore = state.semaphore
+            assert semaphore is not None
         async with semaphore:
             async with state.lock:
                 while True:

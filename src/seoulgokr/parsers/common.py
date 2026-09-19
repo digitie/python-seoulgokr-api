@@ -64,6 +64,9 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
             text = ""
             raise SeoulParseError("JSON 응답을 해석할 수 없습니다")
         if not isinstance(value, Mapping):
+            value = None
+            content = b""
+            text = ""
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
         return dict(value)
     xml_error = False
@@ -77,6 +80,8 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
     if xml_error:
         # Keep the parser exception, which may include response text, out of
         # the public exception chain.
+        root = None
+        parsed_value = None
         content = b""
         text = ""
         raise SeoulParseError("XML 응답을 해석할 수 없습니다")
@@ -84,7 +89,9 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
     return {strip_tag(root.tag): parsed_value}
 
 
-def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvelope:
+def extract_envelope(
+    payload: Mapping[str, Any], *, service: str, max_rows: int | None = None
+) -> ParsedEnvelope:
     service_payload = _unwrap_service(payload, service)
     if not _has_envelope_marker(payload, service_payload, service=service):
         raise SeoulParseError(
@@ -94,7 +101,7 @@ def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvel
     if result_code is None:
         raise SeoulParseError(f"{service} 응답에 RESULT.CODE가 없습니다")
     list_total_count = _list_total_count(payload, service_payload)
-    rows = _extract_rows(service_payload)
+    rows = _extract_rows(service_payload, max_rows=max_rows)
     if result_code and result_code != "INFO-000":
         if result_code == "INFO-200":
             rows = ()
@@ -332,7 +339,9 @@ def _extract_result(
     return code, message
 
 
-def _extract_rows(service_payload: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+def _extract_rows(
+    service_payload: Mapping[str, Any], *, max_rows: int | None = None
+) -> tuple[Mapping[str, Any], ...]:
     for name in (
         "row",
         "realtimeArrivalList",
@@ -346,6 +355,10 @@ def _extract_rows(service_payload: Mapping[str, Any]) -> tuple[Mapping[str, Any]
         if isinstance(value, Mapping):
             return (value,)
         if isinstance(value, list):
+            if max_rows is not None and len(value) > max_rows:
+                raise SeoulParseError(
+                    f"응답 row가 허용된 최대 항목 수({max_rows})를 초과했습니다"
+                )
             if any(not isinstance(item, Mapping) for item in value):
                 raise SeoulParseError(f"{name} row에 object가 아닌 항목이 있습니다")
             return tuple(value)

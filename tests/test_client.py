@@ -659,6 +659,26 @@ async def test_malformed_response_does_not_keep_key_in_parse_cause(config):
 
 
 @pytest.mark.asyncio
+async def test_non_object_json_does_not_keep_key_in_parse_locals(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b'["unit-fixture-key"]',
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulParseError) as error:
+            await client.traffic_info("link")
+
+    assert error.value.__context__ is None
+    assert "unit-fixture-key" not in _traceback_locals_repr(error.value)
+
+
+@pytest.mark.asyncio
 async def test_general_limiter_scope_is_shared_across_subway_credentials():
     calls = 0
 

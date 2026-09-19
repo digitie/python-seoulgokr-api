@@ -10,7 +10,6 @@ import httpx
 
 from .config import SeoulOpenDataConfig
 from .errors import (
-    TRANSIENT_UPSTREAM_CODES,
     SeoulConfigurationError,
     SeoulParseError,
     SeoulUpstreamError,
@@ -301,7 +300,6 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[T]:
         """transport 오류와 HTTP 200 application-level 일시 오류를 함께 처리한다."""
 
-        transient_codes = TRANSIENT_UPSTREAM_CODES
         response: TransportResponse | None = None
         for attempt in range(self.config.max_retries + 1):
             response = await self.transport.request(
@@ -332,7 +330,7 @@ class SeoulOpenDataClient:
                     )
                 if (
                     quota_error
-                    or exc.code not in transient_codes
+                    or not exc.retryable
                     or attempt >= self.config.max_retries
                 ):
                     response = None

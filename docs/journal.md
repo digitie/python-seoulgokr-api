@@ -26,6 +26,10 @@
   반영했다. 응답 16 MiB·row 상한을 선제 적용하고 quota `retryable` 의미를 일치시켰으며,
   페이지/sample 제한은 configuration error로 분리했다. 회귀 테스트 포함 WSL2 pytest는
   37개로 늘었다.
+- 최종 재리뷰에서 발견된 shared limiter 분리 우회를 닫았다. 같은 credential·endpoint·이벤트
+  루프는 하나의 limiter를 공유하고 `max_concurrency`·service policy 충돌은 명시적으로
+  거부한다. JSON/XML 비정상 응답 local 정리, `model_copy` base URL 재검증, row 선제 상한,
+  sample smoke의 `INFO-000`/비어 있지 않은 결과 검증을 추가했다. WSL2 pytest는 42개다.
   두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.

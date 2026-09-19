@@ -19,7 +19,8 @@
 - 실시간 지하철의 보수적 기본 간격은 30초로 둔다. 전체역 도착은 기본 비활성이고,
   명시적 opt-in과 `all_station_arrivals_max_items` 상한이 모두 필요하다.
 - 429의 `Retry-After`는 동일 credential·endpoint·이벤트 루프의 limiter에 공유 cooldown으로
-  기록한다. 지정 시간이 client backoff 상한보다 길면 자동 재시도하지 않는다.
+  기록한다. 지정 시간이 client backoff 상한보다 길면 자동 재시도하지 않는다. 동일 scope의
+  호출 정책이 충돌하면 limiter가 조용히 분리되지 않고 configuration error를 반환한다.
 - application-level `ERROR-337` 또는 명시적인 quota 문구는 자동 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 bounded cooldown을 기록한다.
 - 응답 body는 `max_response_bytes`(기본 16 MiB)로 제한하고, `max_items`는 row를 typed

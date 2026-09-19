@@ -90,7 +90,7 @@ src/seoulgokr/
 - `ERROR-500`, `ERROR-600`, `ERROR-601` 같은 application-level 장애 코드와
   HTTP 장애를 별도로 기록한다.
 - 장애 결과에는 source id, service, sanitized request descriptor, upstream code,
-  retry count, 다음 시도 가능 시각을 넣되 인증키는 절대 포함하지 않는다.
+  `retryable`·`retry_after` 같은 공개 오류 속성을 넣되 인증키는 절대 포함하지 않는다.
 
 ## 6. 호출 제한과 quota 보호
 

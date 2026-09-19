@@ -20,7 +20,7 @@ class SeoulOpenDataConfig(BaseModel):
     키를 포함하지 않는다.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     api_key: SecretStr | None = None
     subway_api_key: SecretStr | None = None
@@ -72,22 +72,7 @@ class SeoulOpenDataConfig(BaseModel):
     @field_validator("general_base_url", "subway_base_url")
     @classmethod
     def _strip_base_url(cls, value: str) -> str:
-        value = value.strip()
-        if not value.startswith(("http://", "https://")):
-            raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
-        try:
-            parsed = urlsplit(value)
-            _ = parsed.port
-        except ValueError as exc:
-            raise ValueError("base URL의 host/port가 올바르지 않습니다") from exc
-        if (
-            parsed.username is not None
-            or parsed.password is not None
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValueError("base URL에는 userinfo·query·fragment를 넣을 수 없습니다")
-        return value.rstrip("/")
+        return validate_base_url(value)
 
     @field_validator("service_daily_budgets")
     @classmethod
@@ -168,6 +153,29 @@ class SeoulOpenDataConfig(BaseModel):
         }:
             return "realtimeSubway"
         return service
+
+
+def validate_base_url(value: str) -> str:
+    """Pydantic 검증을 우회한 model_copy 값도 transport 직전에 검증한다."""
+
+    value = value.strip()
+    if not value.startswith(("http://", "https://")):
+        raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("base URL의 host/port가 올바르지 않습니다") from exc
+    if not parsed.hostname:
+        raise ValueError("base URL에 host가 필요합니다")
+    if (
+        parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("base URL에는 userinfo·query·fragment를 넣을 수 없습니다")
+    return value.rstrip("/")
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:

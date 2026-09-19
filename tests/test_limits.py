@@ -141,11 +141,67 @@ async def test_http_endpoint_is_fail_closed_by_default():
         "https://example.com/api?service_key=password",
         "https://example.com/api#password",
         "https://example.com:invalid/api",
+        "https://",
+        "https:///api",
     ],
 )
 def test_base_url_rejects_embedded_credentials_and_query_secrets(base_url):
     with pytest.raises(ValidationError, match="base URL"):
         SeoulOpenDataConfig(api_key="key", general_base_url=base_url)
+
+
+@pytest.mark.asyncio
+async def test_model_copy_base_url_is_revalidated_before_request():
+    config = SeoulOpenDataConfig(
+        api_key="copy-key",
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    ).model_copy(update={"general_base_url": "https://example.com/api?secret=key"})
+    async with (
+        httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200))
+        ) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(ValueError, match="base URL"):
+            await client.traffic_info("link")
+
+
+@pytest.mark.asyncio
+async def test_same_scope_rejects_conflicting_max_concurrency():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    first_config = SeoulOpenDataConfig(
+        api_key="policy-conflict-key",
+        max_concurrency=1,
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    second_config = first_config.model_copy(update={"max_concurrency": 2})
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        async with SeoulOpenDataClient(
+            config=first_config, http_client=http_client
+        ) as first:
+            await first.traffic_info("link")
+        async with SeoulOpenDataClient(
+            config=second_config, http_client=http_client
+        ) as second:
+            with pytest.raises(ValueError, match="max_concurrency"):
+                await second.traffic_info("link")
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio
