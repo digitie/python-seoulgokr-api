@@ -52,6 +52,10 @@
   percent-encoded 인증키 redaction 누락을 재현했다. 안전한 재검증 오류 재생성과 mixed
   encoding redaction 회귀를 추가했으며, UTF-8 raw 문자와 encoded 구분자의 혼합 변형도
   보강했다. WSL2 pytest는 70개로 늘었다.
+- `611e3ef` 기준 James/Popper 두 독립 최종 hostile review에서 P0/P1/P2가 없음을 확인하고
+  머지 승인을 받았다. WSL2 pytest 70개, Python 3.11/3.12/3.13 CI, Ruff·mypy·secret
+  scanner·패키지 검증·clean wheel·공개 sample smoke가 모두 통과해 Draft PR #1의
+  Ready/merge 게이트를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부

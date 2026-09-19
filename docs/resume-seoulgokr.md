@@ -11,6 +11,10 @@
 - `kor-travel-map`의 비밀값은 읽거나 복사하지 않음
 - GitHub 원격 `github.com/digitie/python-seoulgokr-api` 생성·등록·feature branch
   push 완료, Draft PR #1 생성
+- 최신 코드 커밋 `611e3ef` 기준 James/Popper 두 독립 hostile review에서 P0/P1/P2가
+  없음을 확인하고 merge 승인받음
+- WSL2 Ruff·mypy·pytest 70개, secret scanner, wheel/sdist·`twine check`·clean wheel
+  smoke 및 Python 3.11/3.12/3.13 CI를 통과함
 
 ## 완료한 조사
 
@@ -24,6 +28,6 @@
 
 ## 다음 한 작업
 
-최신 적대적 리뷰에서 확인된 traceback/응답 제한·limiter race 보강을 커밋하고 독립 hostile review
-2건을 최신 커밋에서 다시 완료한다. CI와 live smoke 결과가 유지되면 PR #1을 Ready/merge한다.
-실제 quota·HTTPS 지원은 인증키 신청 후 별도 운영 task로 확인한다.
+문서 릴리스 게이트 커밋의 CI가 최신 HEAD에서 통과하는지 확인한 뒤 PR #1을 Ready로 전환하고
+머지한다. 이 provider 작업은 머지 후 완료로 보고, 실제 quota·HTTPS 지원은 인증키 신청 후
+별도 운영 task로 확인한다.

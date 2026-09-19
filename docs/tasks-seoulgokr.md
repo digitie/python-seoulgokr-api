@@ -38,5 +38,5 @@
 
 - [x] 사용 예제와 quota 주의사항
 - [x] CI 및 secret scanner
-- [ ] 수정 후 hostile review 2회 재실행 및 P1 해소 확인
+- [x] 수정 후 hostile review 2회 재실행 및 P1 해소 확인
 - [x] 사용자 승인 후 GitHub remote/Draft PR
