@@ -59,8 +59,13 @@ class AsyncSeoulTransport:
         self._limiters: dict[str, ServiceRateLimiter] = {}
 
     async def aclose(self) -> None:
-        if self._owns_client:
-            await self._client.aclose()
+        try:
+            if self._owns_client:
+                await self._client.aclose()
+        finally:
+            # Do not keep loop-bound semaphores alive after the transport's
+            # lifecycle has ended.
+            self._limiters.clear()
 
     async def request(
         self,
@@ -344,6 +349,10 @@ class AsyncSeoulTransport:
                         await self._backoff(attempt, retry_after=retry_after)
                         continue
                 if response_status < 200 or response_status >= 300:
+                    if isinstance(last_error, SeoulRateLimitError):
+                        error = last_error
+                        sanitize_locals()
+                        raise error
                     error = SeoulHttpError(
                         response_status,
                         "서울 Open API가 HTTP 오류를 반환했습니다",

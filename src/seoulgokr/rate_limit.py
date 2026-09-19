@@ -35,6 +35,18 @@ class _ServiceState:
     cooldown_until: float | None = None
 
 
+class _LoopLimiterRegistry:
+    """이벤트 루프가 소유하는 limiter 보관소.
+
+    module-level registry는 이 객체의 약한 참조만 보관한다. limiter 내부의
+    asyncio semaphore가 loop를 참조하더라도 module-level strong reference cycle로
+    닫힌 loop를 살려 두지 않기 위해서다.
+    """
+
+    def __init__(self) -> None:
+        self.limiters: dict[str, ServiceRateLimiter] = {}
+
+
 class ServiceRateLimiter:
     """동일 이벤트 루프 내부에서 동작하는 보수적인 서비스 limiter.
 
@@ -57,11 +69,12 @@ class ServiceRateLimiter:
         self._states: dict[str, _ServiceState] = {}
         self._states_lock = asyncio.Lock()
         self._timezone = ZoneInfo(timezone_name)
+        self._timezone_name = self._timezone.key or timezone_name
 
     _shared: ClassVar[
         weakref.WeakKeyDictionary[
             asyncio.AbstractEventLoop,
-            dict[tuple[str, str], ServiceRateLimiter],
+            weakref.ReferenceType[_LoopLimiterRegistry],
         ]
     ] = weakref.WeakKeyDictionary()
 
@@ -69,22 +82,33 @@ class ServiceRateLimiter:
     def shared(
         cls, scope: str, *, timezone_name: str, max_concurrency: int = 1
     ) -> ServiceRateLimiter:
-        """동일 key scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
+        """동일 credential scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
 
         loop = asyncio.get_running_loop()
-        scoped_limiters = cls._shared.setdefault(loop, {})
-        shared_key = (scope, timezone_name)
-        limiter = scoped_limiters.get(shared_key)
+        registry = getattr(loop, "_seoulgokr_limiter_registry", None)
+        if not isinstance(registry, _LoopLimiterRegistry):
+            registry = _LoopLimiterRegistry()
+            loop._seoulgokr_limiter_registry = registry  # type: ignore[attr-defined]
+        cls._shared[loop] = weakref.ref(registry)
+        scoped_limiters = registry.limiters
+        requested_timezone = ZoneInfo(timezone_name)
+        requested_timezone_name = requested_timezone.key or timezone_name
+        limiter = scoped_limiters.get(scope)
         if limiter is None:
             limiter = cls(
                 default_policy=RateLimitPolicy(max_concurrency=max_concurrency),
-                timezone_name=timezone_name,
+                timezone_name=requested_timezone_name,
             )
-            scoped_limiters[shared_key] = limiter
-        elif limiter.default_policy.max_concurrency != max_concurrency:
-            raise ValueError(
-                "동일 credential scope의 max_concurrency 정책이 충돌합니다"
-            )
+            scoped_limiters[scope] = limiter
+        else:
+            if limiter.default_policy.max_concurrency != max_concurrency:
+                raise ValueError(
+                    "동일 credential scope의 max_concurrency 정책이 충돌합니다"
+                )
+            if limiter._timezone_name != requested_timezone_name:
+                raise ValueError(
+                    "동일 credential scope의 quota_timezone 정책이 충돌합니다"
+                )
         return limiter
 
     @staticmethod

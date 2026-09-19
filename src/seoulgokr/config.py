@@ -159,23 +159,42 @@ def validate_base_url(value: str) -> str:
     """Pydantic 검증을 우회한 model_copy 값도 transport 직전에 검증한다."""
 
     value = value.strip()
-    if not value.startswith(("http://", "https://")):
-        raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
+    if not value or any(char.isspace() for char in value):
+        raise ValueError("base URL은 공백 없이 유효한 URL이어야 합니다")
+    # urlsplit treats an empty ``?``/``#`` as an empty query/fragment, but
+    # retaining either delimiter changes how the transport appends path parts.
+    if "?" in value or "#" in value:
+        raise ValueError("base URL에는 userinfo·query·fragment를 넣을 수 없습니다")
     try:
         parsed = urlsplit(value)
-        _ = parsed.port
+        scheme = parsed.scheme.casefold()
+        port = parsed.port
+        hostname = parsed.hostname
     except ValueError as exc:
         raise ValueError("base URL의 host/port가 올바르지 않습니다") from exc
-    if not parsed.hostname:
+    if scheme not in {"http", "https"}:
+        raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
+    if not hostname:
         raise ValueError("base URL에 host가 필요합니다")
-    if (
-        parsed.username is not None
-        or parsed.password is not None
-        or parsed.query
-        or parsed.fragment
-    ):
+    if parsed.username is not None or parsed.password is not None:
         raise ValueError("base URL에는 userinfo·query·fragment를 넣을 수 없습니다")
-    return value.rstrip("/")
+
+    hostname = hostname.rstrip(".").casefold()
+    if not hostname:
+        raise ValueError("base URL에 host가 필요합니다")
+    try:
+        if ":" not in hostname:
+            hostname = hostname.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise ValueError("base URL의 host가 올바르지 않습니다") from exc
+    if ":" in hostname:
+        netloc = f"[{hostname}]"
+    else:
+        netloc = hostname
+    default_port = 80 if scheme == "http" else 443
+    if port is not None and port != default_port:
+        netloc = f"{netloc}:{port}"
+    return f"{scheme}://{netloc}{parsed.path.rstrip('/')}"
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:

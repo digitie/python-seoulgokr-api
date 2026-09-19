@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 
 import httpx
 import pytest
 from pydantic import ValidationError
 
 from seoulgokr import SeoulOpenDataClient, SeoulOpenDataConfig
+from seoulgokr.config import validate_base_url
 from seoulgokr.errors import SeoulConfigurationError, SeoulQuotaError
 from seoulgokr.rate_limit import RateLimitPolicy, ServiceRateLimiter
 from seoulgokr.transport import AsyncSeoulTransport
@@ -139,7 +141,9 @@ async def test_http_endpoint_is_fail_closed_by_default():
     [
         "https://user:password@example.com/api",
         "https://example.com/api?service_key=password",
+        "https://example.com/api?",
         "https://example.com/api#password",
+        "https://example.com/api#",
         "https://example.com:invalid/api",
         "https://",
         "https:///api",
@@ -148,6 +152,18 @@ async def test_http_endpoint_is_fail_closed_by_default():
 def test_base_url_rejects_embedded_credentials_and_query_secrets(base_url):
     with pytest.raises(ValidationError, match="base URL"):
         SeoulOpenDataConfig(api_key="key", general_base_url=base_url)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("HTTPS://EXAMPLE.COM:443/api/", "https://example.com/api"),
+        ("http://EXAMPLE.COM:80/api/", "http://example.com/api"),
+        ("https://example.com./api///", "https://example.com/api"),
+    ],
+)
+def test_base_url_canonicalizes_host_default_port_and_path(value, expected):
+    assert validate_base_url(value) == expected
 
 
 @pytest.mark.asyncio
@@ -202,6 +218,42 @@ async def test_same_scope_rejects_conflicting_max_concurrency():
                 await second.traffic_info("link")
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_same_scope_rejects_conflicting_quota_timezone():
+    scope = "timezone-policy-conflict"
+    first = ServiceRateLimiter.shared(scope, timezone_name="Asia/Seoul")
+
+    assert first._timezone_name == "Asia/Seoul"
+    with pytest.raises(ValueError, match="quota_timezone"):
+        ServiceRateLimiter.shared(scope, timezone_name="UTC")
+
+
+def test_shared_registry_does_not_retain_closed_event_loops():
+    scope_prefix = "closed-loop-cleanup-"
+
+    async def contend(scope: str) -> None:
+        limiter = ServiceRateLimiter.shared(scope, timezone_name="Asia/Seoul")
+
+        async def enter() -> None:
+            async with limiter.slot(
+                "service", RateLimitPolicy(minimum_interval_seconds=0)
+            ):
+                await asyncio.sleep(0)
+
+        await asyncio.gather(enter(), enter())
+
+    for index in range(5):
+        asyncio.run(contend(f"{scope_prefix}{index}"))
+    gc.collect()
+
+    assert all(
+        registry_ref() is None
+        or not any(scope.startswith(scope_prefix) for scope in registry_ref().limiters)
+        for registry_ref in ServiceRateLimiter._shared.values()
+    )
+    assert all(not loop.is_closed() for loop in ServiceRateLimiter._shared)
 
 
 @pytest.mark.asyncio

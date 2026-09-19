@@ -336,6 +336,27 @@ async def test_malformed_envelope_and_traffic_row_are_rejected(config):
 
 
 @pytest.mark.asyncio
+async def test_paginated_response_cannot_exceed_requested_page(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "TrafficInfo": {
+                    "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"},
+                    "row": [{"link_id": "one"}, {"link_id": "two"}],
+                }
+            },
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulParseError, match=r"최대 항목 수\(1\)"):
+            await client.traffic_info("link", start_index=1, end_index=1)
+
+
+@pytest.mark.asyncio
 async def test_citydata_info_200_is_an_empty_result(config):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -593,6 +614,23 @@ async def test_oversized_retry_after_is_rejected_before_sleep(config, status_cod
                 await client.traffic_info("link")
 
     assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_final_5xx_preserves_retry_after(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, headers={"Retry-After": "3"})
+
+    no_retry_config = config.model_copy(update={"max_retries": 0})
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=no_retry_config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulRateLimitError) as error:
+            await client.traffic_info("link")
+
+    assert error.value.retry_after == 3
+    assert error.value.status_code == 503
 
 
 @pytest.mark.asyncio

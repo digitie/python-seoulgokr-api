@@ -34,7 +34,12 @@
   재현해 canonical URL을 limiter scope 계산에도 적용했다. shared registry는 loop weak
   reference로 바꾸고 5xx `Retry-After` 오류의 `retry_after/status_code/request`도 채웠다.
   WSL2 Ruff·mypy·pytest는 43개가 통과했다.
-  두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
+- 후속 두 독립 리뷰가 지적한 loop↔semaphore 수명 연결, URL host/default-port/빈 query
+  canonicalization, timezone별 quota 분리, 최종 5xx `Retry-After` 유실을 보강했다. loop가
+  limiter registry의 소유자가 되고 module-level registry는 약한 참조만 가지도록 바꿨으며,
+  paginated 응답도 요청 page 크기를 넘으면 typed 변환 전에 거부한다. WSL2 Ruff·mypy·pytest는
+  52개가 통과했다. 새 커밋 기준 hostile review 2건과 CI를 다시 확인한 뒤 PR #1 merge gate를
+  진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부

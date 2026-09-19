@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Self, TypeVar
 
 import httpx
@@ -311,7 +311,12 @@ class SeoulOpenDataClient:
                     parse_payload(response.content, content_type=response.content_type),
                     self._secret_values(),
                 )
-                envelope, items = parser(payload, max_items=max_items)
+                effective_max_items = max_items
+                if effective_max_items is None:
+                    effective_max_items = _paginated_response_limit(
+                        api=api, request_kwargs=request_kwargs
+                    )
+                envelope, items = parser(payload, max_items=effective_max_items)
             except RecursionError:
                 recursion_error = True
             except SeoulParseError:
@@ -393,3 +398,17 @@ def _normalize_response_format(value: str, *, allowed: set[str], service: str) -
             f"{service} response_format은 {allowed_text} 중 하나여야 합니다"
         )
     return normalized
+
+
+def _paginated_response_limit(
+    *, api: str, request_kwargs: Mapping[str, Any]
+) -> int | None:
+    """페이지 계약보다 큰 upstream row 응답을 typed 변환 전에 차단한다."""
+
+    if request_kwargs.get("include_pagination", True) is False:
+        return None
+    start_index = request_kwargs.get("start_index")
+    end_index = request_kwargs.get("end_index")
+    if not isinstance(start_index, int) or not isinstance(end_index, int):
+        return None
+    return end_index - start_index + (1 if api == "general" else 0)

@@ -44,8 +44,11 @@ seoulgokr client facade
 - key가 URL path에 들어가는 upstream 계약은 redacted request descriptor로만 기록한다.
 - 공식 문서가 HTTP URL을 제시하므로 실제 운영 전 HTTPS/TLS 보장을 검증한다.
 - 모든 외부 호출은 timeout, bounded retry, per-service limiter를 거친다.
-- 응답 body는 `max_response_bytes`로 제한하고, row 상한은 typed model 변환 전에 적용한다.
+- 응답 body는 `max_response_bytes`로 제한하고, 전체역 caller 상한과 paginated page 크기
+  상한은 typed model 변환 전에 적용한다.
 - cooldown과 shared concurrency policy는 동시 호출에서 확장·교체 race가 발생하지 않도록
   limiter state에 고정한다.
+- shared limiter는 동일 credential·endpoint·이벤트 루프에서 quota를 공유하며,
+  `quota_timezone`이 다르면 scope를 조용히 분리하지 않고 설정 충돌로 거부한다.
 - provider는 인증키가 없으면 명확한 configuration error를 내고, 임의의 sample/live
   전환을 하지 않는다.
