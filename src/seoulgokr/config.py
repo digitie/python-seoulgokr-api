@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 from typing import ClassVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -235,7 +236,13 @@ def validate_base_url(value: str) -> str:
     default_port = 80 if scheme == "http" else 443
     if port is not None and port != default_port:
         netloc = f"{netloc}:{port}"
-    return f"{scheme}://{netloc}{parsed.path.rstrip('/')}"
+    path = posixpath.normpath(parsed.path or "")
+    if path == ".":
+        path = ""
+    else:
+        path = f"/{path.lstrip('/')}"
+        path = path.rstrip("/")
+    return f"{scheme}://{netloc}{path}"
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:

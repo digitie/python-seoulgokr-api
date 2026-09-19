@@ -43,7 +43,8 @@
 - 추가 리뷰에서 발견된 최종 5xx 이후 404가 이전 `SeoulRateLimitError`로 덮이는 문제를
   고쳤고, transient 5xx 범위를 문서와 구현에 맞췄다. `from_env`·limiter 충돌 traceback의
   키 local 정리, `model_copy` runtime 재검증, mutable config의 stale limiter 재사용 방지와
-  회귀 테스트를 추가했다. WSL2 pytest는 56개로 늘었다.
+  회귀 테스트를 추가했다. 이후 URL dot-segment canonicalization과 quota scope 회귀도
+  보강했으며 WSL2 pytest는 60개로 늘었다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.
   provider 데이터를 주기적으로 PostgreSQL에 저장하고, 저장 자료를 외부 OpenAPI와 내부

@@ -37,7 +37,7 @@
   않는다. `quota_timezone`은 credential scope를 분리하는 키가 아니며, 같은 scope에서
   설정이 다르면 명시적인 configuration error를 반환한다.
 - URL canonicalization 후 credential·endpoint scope를 계산해 host 대소문자, 기본 port,
-  trailing slash 같은 표현 차이로 quota가 분리되지 않게 한다.
+  trailing slash, dot-segment 같은 표현 차이로 quota가 분리되지 않게 한다.
 - transport/client 경계에서 `model_copy(update=...)`로 검증을 우회한 설정도 다시 검증하고,
   호출마다 현재 credential·endpoint·동시성 정책으로 limiter를 재확인한다. 따라서 mutable
   config 변경이 stale limiter를 조용히 재사용하거나 quota를 우회하지 않는다.

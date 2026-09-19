@@ -171,6 +171,9 @@ def test_base_url_rejects_embedded_credentials_and_query_secrets(base_url):
         ("HTTPS://EXAMPLE.COM:443/api/", "https://example.com/api"),
         ("http://EXAMPLE.COM:80/api/", "http://example.com/api"),
         ("https://example.com./api///", "https://example.com/api"),
+        ("https://example.com/api/.", "https://example.com/api"),
+        ("https://example.com/api/../api", "https://example.com/api"),
+        ("https://example.com/../api", "https://example.com/api"),
     ],
 )
 def test_base_url_canonicalizes_host_default_port_and_path(value, expected):
@@ -331,7 +334,8 @@ def test_shared_registry_does_not_retain_closed_event_loops():
 
 
 @pytest.mark.asyncio
-async def test_canonical_base_url_keeps_shared_quota_scope():
+@pytest.mark.parametrize("suffix", ["/", "/."])
+async def test_canonical_base_url_keeps_shared_quota_scope(suffix):
     calls = 0
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -353,7 +357,7 @@ async def test_canonical_base_url_keeps_shared_quota_scope():
         allow_insecure_http=True,
     )
     second_config = first_config.model_copy(
-        update={"general_base_url": f"{first_config.general_base_url}/"}
+        update={"general_base_url": f"{first_config.general_base_url}{suffix}"}
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
         async with SeoulOpenDataClient(
