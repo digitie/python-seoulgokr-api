@@ -105,15 +105,29 @@ def parse_parking_lots(
             parking_lot_name=text_value(row, "PKLT_NM", "pklt_nm"),
             address=text_value(row, "ADDR", "addr"),
             capacity=int_value(row, "TPKCT", "tpkct"),
-            operation_type=text_value(row, "OPRT_STTS", "OPRT_TYPE", "oprt_stts"),
-            weekday_open_time=text_value(row, "WD_OPR_STRT_TM", "wd_opr_strt_tm"),
-            weekday_close_time=text_value(row, "WD_OPR_END_TM", "wd_opr_end_tm"),
-            saturday_open_time=text_value(row, "SAT_OPR_STRT_TM", "sat_opr_strt_tm"),
-            saturday_close_time=text_value(row, "SAT_OPR_END_TM", "sat_opr_end_tm"),
-            holiday_open_time=text_value(row, "LH_OPR_STRT_TM", "holiday_open_time"),
-            holiday_close_time=text_value(row, "LH_OPR_END_TM", "holiday_close_time"),
+            operation_type=text_value(
+                row, "OPRT_STTS", "OPRT_TYPE", "OPER_SE_NM", "oprt_stts"
+            ),
+            weekday_open_time=text_value(
+                row, "WD_OPR_STRT_TM", "WD_OPER_BGNG_TM", "wd_opr_strt_tm"
+            ),
+            weekday_close_time=text_value(
+                row, "WD_OPR_END_TM", "WD_OPER_END_TM", "wd_opr_end_tm"
+            ),
+            saturday_open_time=text_value(
+                row, "SAT_OPR_STRT_TM", "WE_OPER_BGNG_TM", "sat_opr_strt_tm"
+            ),
+            saturday_close_time=text_value(
+                row, "SAT_OPR_END_TM", "WE_OPER_END_TM", "sat_opr_end_tm"
+            ),
+            holiday_open_time=text_value(
+                row, "LH_OPR_STRT_TM", "LHLDY_OPER_BGNG_TM", "holiday_open_time"
+            ),
+            holiday_close_time=text_value(
+                row, "LH_OPR_END_TM", "LHLDY_OPER_END_TM", "holiday_close_time"
+            ),
             latitude=float_value(row, "LAT", "lat"),
-            longitude=float_value(row, "LNG", "lng"),
+            longitude=float_value(row, "LNG", "LOT", "lng"),
             last_data_sync_time=text_value(
                 row, "LAST_DATA_SYNC_TM", "last_data_sync_tm"
             ),
@@ -168,7 +182,7 @@ def _arrival(row: Mapping[str, Any]) -> SubwayArrival:
         train_no=text_value(row, "btrainNo", "trainNo"),
         arrival_seconds=int_value(row, "barvlDt"),
         received_at=datetime_value(row, "recptnDt"),
-        arrival_message=text_value(row, "arvlMsg1"),
+        arrival_message=text_value(row, "arvlMsg1", "arvlMsg2"),
         arrival_message_2=text_value(row, "arvlMsg2"),
         arrival_message_3=text_value(row, "arvlMsg3"),
         arrival_code=text_value(row, "arvlCd"),
