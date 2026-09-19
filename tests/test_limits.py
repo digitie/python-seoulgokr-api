@@ -205,6 +205,45 @@ async def test_same_scope_rejects_conflicting_max_concurrency():
 
 
 @pytest.mark.asyncio
+async def test_canonical_base_url_keeps_shared_quota_scope():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    first_config = SeoulOpenDataConfig(
+        api_key="canonical-scope-key",
+        service_daily_budgets={"TrafficInfo": 1},
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    second_config = first_config.model_copy(
+        update={"general_base_url": f"{first_config.general_base_url}/"}
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        async with SeoulOpenDataClient(
+            config=first_config, http_client=http_client
+        ) as first:
+            await first.traffic_info("link")
+        async with SeoulOpenDataClient(
+            config=second_config, http_client=http_client
+        ) as second:
+            with pytest.raises(SeoulQuotaError, match="일일 호출 예산"):
+                await second.traffic_info("link")
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
 async def test_extended_cooldown_is_not_cleared_by_an_older_waiter():
     limiter = ServiceRateLimiter()
     await limiter.cooldown("service", 0.02)

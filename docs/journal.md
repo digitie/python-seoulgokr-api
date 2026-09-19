@@ -30,6 +30,10 @@
   루프는 하나의 limiter를 공유하고 `max_concurrency`·service policy 충돌은 명시적으로
   거부한다. JSON/XML 비정상 응답 local 정리, `model_copy` base URL 재검증, row 선제 상한,
   sample smoke의 `INFO-000`/비어 있지 않은 결과 검증을 추가했다. WSL2 pytest는 42개다.
+- trailing slash가 있는 `model_copy` base URL이 별도 limiter scope가 되는 P1을 추가로
+  재현해 canonical URL을 limiter scope 계산에도 적용했다. shared registry는 loop weak
+  reference로 바꾸고 5xx `Retry-After` 오류의 `retry_after/status_code/request`도 채웠다.
+  WSL2 Ruff·mypy·pytest는 43개가 통과했다.
   두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.

@@ -164,14 +164,14 @@ class AsyncSeoulTransport:
                     if self.config.api_key
                     else ""
                 )
-                base_url = self.config.general_base_url
+                base_url = validate_base_url(self.config.general_base_url)
             elif api == "subway":
                 key = (
                     self.config.subway_key.get_secret_value()
                     if self.config.subway_key
                     else ""
                 )
-                base_url = self.config.subway_base_url
+                base_url = validate_base_url(self.config.subway_base_url)
             else:
                 raise ValueError("api는 general 또는 subway여야 합니다")
             limiter = ServiceRateLimiter.shared(
@@ -335,7 +335,10 @@ class AsyncSeoulTransport:
                         raise error
                     limiter.mark_cooldown(service, retry_after)
                     last_error = SeoulRateLimitError(
-                        f"서울 Open API 일시 오류 HTTP {response_status}"
+                        f"서울 Open API 일시 오류 HTTP {response_status}",
+                        retry_after=retry_after,
+                        status_code=response_status,
+                        request=request_info,
                     )
                     if attempt + 1 < attempts:
                         await self._backoff(attempt, retry_after=retry_after)

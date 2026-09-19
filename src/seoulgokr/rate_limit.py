@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -57,7 +58,12 @@ class ServiceRateLimiter:
         self._states_lock = asyncio.Lock()
         self._timezone = ZoneInfo(timezone_name)
 
-    _shared: ClassVar[dict[tuple[str, int, str], ServiceRateLimiter]] = {}
+    _shared: ClassVar[
+        weakref.WeakKeyDictionary[
+            asyncio.AbstractEventLoop,
+            dict[tuple[str, str], ServiceRateLimiter],
+        ]
+    ] = weakref.WeakKeyDictionary()
 
     @classmethod
     def shared(
@@ -65,15 +71,16 @@ class ServiceRateLimiter:
     ) -> ServiceRateLimiter:
         """동일 key scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
 
-        loop_id = id(asyncio.get_running_loop())
-        shared_key = (scope, loop_id, timezone_name)
-        limiter = cls._shared.get(shared_key)
+        loop = asyncio.get_running_loop()
+        scoped_limiters = cls._shared.setdefault(loop, {})
+        shared_key = (scope, timezone_name)
+        limiter = scoped_limiters.get(shared_key)
         if limiter is None:
             limiter = cls(
                 default_policy=RateLimitPolicy(max_concurrency=max_concurrency),
                 timezone_name=timezone_name,
             )
-            cls._shared[shared_key] = limiter
+            scoped_limiters[shared_key] = limiter
         elif limiter.default_policy.max_concurrency != max_concurrency:
             raise ValueError(
                 "동일 credential scope의 max_concurrency 정책이 충돌합니다"

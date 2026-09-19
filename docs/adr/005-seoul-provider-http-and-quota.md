@@ -28,6 +28,9 @@
   구분해 `SeoulConfigurationError`로 반환한다.
 - 동일 limiter의 cooldown deadline은 더 늦게 설정된 값이 이전 waiter에 의해 지워지지
   않도록 재검사하며, 공유 limiter의 `max_concurrency` 정책은 scope에 고정한다.
+- limiter의 shared registry는 이벤트 루프 weak reference를 사용하며, URL canonicalization
+  후 credential·endpoint scope를 계산해 trailing slash 같은 표현 차이로 quota가 분리되지
+  않게 한다.
 
 ## 근거
 
