@@ -5,14 +5,17 @@ import asyncio
 import httpx
 import pytest
 
-from seoulgokr import SeoulOpenDataClient
+from seoulgokr import SeoulOpenDataClient, SeoulOpenDataConfig
 from seoulgokr.errors import (
     SeoulConfigurationError,
+    SeoulHttpError,
     SeoulParseError,
+    SeoulQuotaError,
     SeoulRateLimitError,
     SeoulUpstreamError,
 )
 from seoulgokr.parsers.services import parse_parking_lots
+from seoulgokr.transport import AsyncSeoulTransport
 
 
 @pytest.mark.asyncio
@@ -42,6 +45,47 @@ async def test_traffic_xml_is_typed_and_key_is_redacted(config):
     assert result.items[0].process_travel_time_seconds == 318
     assert "unit-fixture-key" not in result.request["url"]
     assert "<redacted>" in result.request["url"]
+
+
+@pytest.mark.asyncio
+async def test_response_provenance_and_upstream_error_redact_echoed_key(config):
+    responses = [
+        httpx.Response(
+            200,
+            json={
+                "TrafficInfo": {
+                    "list_total_count": 1,
+                    "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"},
+                    "row": [{"link_id": "unit-fixture-key"}],
+                }
+            },
+        ),
+        httpx.Response(
+            200,
+            json={
+                "RESULT": {
+                    "CODE": "ERROR-336",
+                    "MESSAGE": "unit-fixture-key was echoed by upstream",
+                }
+            },
+        ),
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return responses.pop(0)
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        result = await client.traffic_info("link")
+        with pytest.raises(SeoulUpstreamError) as error:
+            await client.traffic_info("link")
+
+    assert result.items[0].link_id == "<redacted>"
+    assert "unit-fixture-key" not in repr(result.items[0].raw)
+    assert "unit-fixture-key" not in repr(result.raw_payload)
+    assert "unit-fixture-key" not in str(error.value)
 
 
 @pytest.mark.asyncio
@@ -242,6 +286,19 @@ async def test_malformed_envelope_and_traffic_row_are_rejected(config):
                 }
             },
         ),
+        httpx.Response(
+            200,
+            json={
+                "TrafficInfo": {
+                    "RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"},
+                    "garbage": "value",
+                }
+            },
+        ),
+        httpx.Response(
+            200,
+            json={"RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"}},
+        ),
     ]
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -254,6 +311,10 @@ async def test_malformed_envelope_and_traffic_row_are_rejected(config):
         with pytest.raises(SeoulParseError, match="envelope"):
             await client.traffic_info("link")
         with pytest.raises(SeoulParseError, match="link_id"):
+            await client.traffic_info("link")
+        with pytest.raises(SeoulParseError, match="list/row"):
+            await client.traffic_info("link")
+        with pytest.raises(SeoulParseError, match="list/row"):
             await client.traffic_info("link")
 
 
@@ -349,6 +410,95 @@ async def test_retry_after_cooldown_is_shared_between_clients(config):
     assert elapsed >= 0.04
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [429, 503])
+async def test_oversized_retry_after_is_rejected_before_sleep(config, status_code):
+    sleeps: list[float] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, headers={"Retry-After": "9999999"})
+
+    limited_config = config.model_copy(
+        update={"max_retries": 1, "retry_backoff_max_seconds": 1.0}
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        transport = AsyncSeoulTransport(
+            limited_config,
+            http_client=http_client,
+            sleep=lambda delay: _record_sleep(sleeps, delay),
+        )
+        async with SeoulOpenDataClient(transport=transport) as client:
+            with pytest.raises(SeoulRateLimitError, match="너무 길어"):
+                await client.traffic_info("link")
+
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_injected_http_client_still_has_a_timeout():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={})
+
+    config = SeoulOpenDataConfig(
+        api_key="timeout-key",
+        timeout_seconds=0.01,
+        max_retries=0,
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulHttpError, match="네트워크"):
+            await client.traffic_info("link")
+
+
+@pytest.mark.asyncio
+async def test_general_limiter_scope_is_shared_across_subway_credentials():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><list_total_count>1</list_total_count>"
+                "<row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    def make_config(subway_key: str) -> SeoulOpenDataConfig:
+        return SeoulOpenDataConfig(
+            api_key="shared-general-credential",
+            subway_api_key=subway_key,
+            service_daily_budgets={"TrafficInfo": 1},
+            general_min_interval_seconds=0,
+            realtime_min_interval_seconds=0,
+            allow_insecure_http=True,
+        )
+
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as first_http,
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as second_http,
+        SeoulOpenDataClient(
+            config=make_config("subway-a"), http_client=first_http
+        ) as first,
+        SeoulOpenDataClient(
+            config=make_config("subway-b"), http_client=second_http
+        ) as second,
+    ):
+        await first.traffic_info("link")
+        with pytest.raises(SeoulQuotaError, match="일일 호출 예산"):
+            await second.traffic_info("link")
+
+    assert calls == 1
+
+
 def test_static_parking_holiday_and_coordinate_aliases_are_preserved():
     envelope, items = parse_parking_lots(
         {
@@ -372,3 +522,7 @@ def test_static_parking_holiday_and_coordinate_aliases_are_preserved():
     assert items[0].holiday_open_time == "00:00"
     assert items[0].holiday_close_time == "23:59"
     assert items[0].longitude == 126.97
+
+
+async def _record_sleep(sleeps: list[float], delay: float) -> None:
+    sleeps.append(delay)

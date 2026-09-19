@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+TRANSIENT_UPSTREAM_CODES = frozenset({"ERROR-500", "ERROR-600", "ERROR-601"})
+
 
 class SeoulGokrError(Exception):
     """provider 오류의 공통 기반 클래스."""

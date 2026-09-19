@@ -11,7 +11,13 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from ..errors import SeoulParseError, SeoulUpstreamError
+from defusedxml import ElementTree as SafeET  # type: ignore[import-untyped]
+
+from ..errors import (
+    TRANSIENT_UPSTREAM_CODES,
+    SeoulParseError,
+    SeoulUpstreamError,
+)
 
 KOREA_TZ = ZoneInfo("Asia/Seoul")
 
@@ -29,7 +35,10 @@ class ParsedEnvelope:
 def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any]:
     """응답 body를 JSON/XML 모두 mapping으로 변환한다."""
 
-    text = content.decode("utf-8-sig", errors="replace").strip()
+    try:
+        text = content.decode("utf-8-sig").strip()
+    except UnicodeDecodeError as exc:
+        raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다") from exc
     if not text:
         raise SeoulParseError("서울 Open API가 빈 응답을 반환했습니다")
     looks_xml = "xml" in content_type.lower() or text.startswith("<")
@@ -42,7 +51,7 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
         return dict(value)
     try:
-        root = ET.fromstring(text)
+        root = SafeET.fromstring(text)
     except ET.ParseError as exc:
         raise SeoulParseError(f"XML 응답을 해석할 수 없습니다: {exc}") from exc
     return {strip_tag(root.tag): _xml_value(root)}
@@ -65,7 +74,12 @@ def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvel
                 result_code,
                 result_message or "서울 Open API가 오류를 반환했습니다",
                 service=service,
+                retryable=result_code in TRANSIENT_UPSTREAM_CODES,
             )
+    if result_code != "INFO-200" and not _has_data_marker(payload, service_payload):
+        raise SeoulParseError(
+            f"{service} INFO-000 응답에 list/row 데이터 표식이 없습니다"
+        )
     return ParsedEnvelope(
         payload=payload,
         service_payload=service_payload,
@@ -92,6 +106,7 @@ def extract_citydata_envelope(
             result_code,
             result_message or "서울 Open API가 오류를 반환했습니다",
             service=service,
+            retryable=result_code in TRANSIENT_UPSTREAM_CODES,
         )
     return ParsedEnvelope(
         payload=payload,
@@ -228,6 +243,24 @@ def _has_citydata_marker(
     return False
 
 
+def _has_data_marker(
+    payload: Mapping[str, Any], service_payload: Mapping[str, Any]
+) -> bool:
+    for name in (
+        "list_total_count",
+        "totalCount",
+        "total",
+        "row",
+        "realtimeArrivalList",
+        "realtimePositionList",
+    ):
+        if first_value(payload, name) is not None:
+            return True
+        if first_value(service_payload, name) is not None:
+            return True
+    return False
+
+
 def _extract_result(
     payload: Mapping[str, Any], service_payload: Mapping[str, Any]
 ) -> tuple[str | None, str | None]:
@@ -276,7 +309,10 @@ def _extract_rows(service_payload: Mapping[str, Any]) -> tuple[Mapping[str, Any]
         if isinstance(value, Mapping):
             return (value,)
         if isinstance(value, list):
-            return tuple(item for item in value if isinstance(item, Mapping))
+            if any(not isinstance(item, Mapping) for item in value):
+                raise SeoulParseError(f"{name} row에 object가 아닌 항목이 있습니다")
+            return tuple(value)
+        raise SeoulParseError(f"{name} row가 object/list가 아닙니다")
     return ()
 
 

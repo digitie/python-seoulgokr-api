@@ -14,6 +14,9 @@ ENV_NAMES = (
     "KOR_TRAVEL_MAP_API_DATAGOKR_SERVICE_KEY",
     "KOR_TRAVEL_MAP_DATA_GO_KR_SERVICE_KEY",
     "DATA_GO_KR_SERVICE_KEY",
+    "DATAGOKR_API_KEY",
+    "PUBLIC_DATA_SERVICE_KEY",
+    "SERVICE_KEY",
 )
 ASSIGNMENT = re.compile(
     r"(?P<name>" + "|".join(map(re.escape, ENV_NAMES)) + r")\s*(?:=|:)\s*"

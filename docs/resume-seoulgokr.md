@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- provider 1차 구현, 계약 테스트, 패키지 검증 및 공개 sample live smoke 완료
+- provider 1차 구현, 계약 테스트, 보안 회귀 테스트, 패키지 검증 및 공개 sample live smoke 완료
 - 대상 경로는 최초 확인 시 없었고 새 Git 저장소를 생성함
 - 브랜치: `codex/implement-seoulgokr-api`
 - `src/seoulgokr/`에 config, async transport, retry, limiter, redaction, parser,

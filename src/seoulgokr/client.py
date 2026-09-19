@@ -10,6 +10,7 @@ import httpx
 
 from .config import SeoulOpenDataConfig
 from .errors import (
+    TRANSIENT_UPSTREAM_CODES,
     SeoulConfigurationError,
     SeoulParseError,
     SeoulQuotaError,
@@ -34,6 +35,7 @@ from .parsers import (
     parse_subway_positions,
     parse_traffic_info,
 )
+from .redaction import redact_value
 from .transport import AsyncSeoulTransport
 
 T = TypeVar("T")
@@ -73,6 +75,11 @@ class SeoulOpenDataClient:
                 "config과 api_key/subway_api_key를 동시에 지정할 수 없습니다"
             )
         self.config = config
+        self._secrets = tuple(
+            secret.get_secret_value()
+            for secret in (config.api_key, config.subway_key)
+            if secret is not None
+        )
         self.transport = transport or AsyncSeoulTransport(
             config, http_client=http_client
         )
@@ -270,12 +277,13 @@ class SeoulOpenDataClient:
     ) -> SeoulApiResult[T]:
         """transport 오류와 HTTP 200 application-level 일시 오류를 함께 처리한다."""
 
-        transient_codes = {"ERROR-500", "ERROR-600", "ERROR-601"}
+        transient_codes = TRANSIENT_UPSTREAM_CODES
         for attempt in range(self.config.max_retries + 1):
             response = await self.transport.request(service=service, **request_kwargs)
             try:
-                payload = parse_payload(
-                    response.content, content_type=response.content_type
+                payload = redact_value(
+                    parse_payload(response.content, content_type=response.content_type),
+                    self._secrets,
                 )
                 envelope, items = parser(payload)
                 if max_items is not None and len(items) > max_items:

@@ -55,6 +55,14 @@ jobs:
       - name: Validate distributions
         run: uv run --locked --extra dev python -m twine check dist/*
 
+      - name: Check sdist contents
+        shell: bash
+        run: |
+          if tar -tzf dist/*.tar.gz | grep -E '(^|/)(AGENTS|CLAUDE|SKILL|\.github|docs|scripts|tests)/'; then
+            echo "internal project files leaked into the source distribution"
+            exit 1
+          fi
+
       - name: Clean wheel installation smoke
         shell: bash
         run: |

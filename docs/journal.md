@@ -8,7 +8,7 @@
 - 두 차례 적대적 리뷰에서 확인된 P1을 반영했다: HTTP fail-closed/opt-in, 서울 시간대
   daily budget, 429 `Retry-After` 공유 cooldown, inclusive pagination, 전체역 응답 상한,
   `INFO-200` 빈 결과, malformed envelope/필수 식별자 검증, sdist 내부 문서 제외.
-- WSL2에서 Ruff, mypy, pytest 18개, wheel/sdist build, `twine check`, clean wheel
+- WSL2에서 Ruff, mypy, pytest 23개, wheel/sdist build, `twine check`, clean wheel
   install을 통과시켰고 secret scanner도 통과했다. 수정 후 James/Popper 독립 리뷰와
   CI를 재실행한 뒤 PR #1 merge gate를 진행한다.
 

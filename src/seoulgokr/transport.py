@@ -63,15 +63,27 @@ class AsyncSeoulTransport:
         )
         self._owns_client = http_client is None
         self._sleep = sleep or asyncio.sleep
-        self._limiter = limiter or ServiceRateLimiter.shared(
-            ServiceRateLimiter.scope_for(
-                config.api_key.get_secret_value() if config.api_key else "",
-                config.subway_key.get_secret_value() if config.subway_key else "",
-                config.general_base_url,
-                config.subway_base_url,
-            ),
-            timezone_name=config.quota_timezone,
-        )
+        self._provided_limiter = limiter
+        self._limiters: dict[str, ServiceRateLimiter] = {}
+        if limiter is None:
+            self._limiters = {
+                "general": ServiceRateLimiter.shared(
+                    ServiceRateLimiter.scope_for(
+                        config.api_key.get_secret_value() if config.api_key else "",
+                        config.general_base_url,
+                    ),
+                    timezone_name=config.quota_timezone,
+                ),
+                "subway": ServiceRateLimiter.shared(
+                    ServiceRateLimiter.scope_for(
+                        config.subway_key.get_secret_value()
+                        if config.subway_key
+                        else "",
+                        config.subway_base_url,
+                    ),
+                    timezone_name=config.quota_timezone,
+                ),
+            }
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -144,8 +156,17 @@ class AsyncSeoulTransport:
             max_concurrency=self.config.max_concurrency,
         )
         return await self._request_with_retry(
-            url, request_info, self.config.quota_group(service), policy
+            url,
+            request_info,
+            self.config.quota_group(service),
+            policy,
+            limiter=self._limiter_for(api),
         )
+
+    def _limiter_for(self, api: str) -> ServiceRateLimiter:
+        if self._provided_limiter is not None:
+            return self._provided_limiter
+        return self._limiters[api]
 
     async def _request_with_retry(
         self,
@@ -153,14 +174,17 @@ class AsyncSeoulTransport:
         request_info: Mapping[str, str],
         service: str,
         policy: RateLimitPolicy,
+        *,
+        limiter: ServiceRateLimiter,
     ) -> TransportResponse:
         last_error: Exception | None = None
         attempts = self.config.max_retries + 1
         for attempt in range(attempts):
             try:
-                async with self._limiter.slot(service, policy):
-                    response = await self._client.get(url)
-            except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                async with limiter.slot(service, policy):
+                    async with asyncio.timeout(self.config.timeout_seconds):
+                        response = await self._client.get(url)
+            except (TimeoutError, httpx.TimeoutException, httpx.NetworkError) as exc:
                 last_error = exc
                 if attempt + 1 >= attempts:
                     raise SeoulHttpError(
@@ -172,7 +196,6 @@ class AsyncSeoulTransport:
                 continue
             if response.status_code == 429:
                 retry_after = _retry_after_seconds(response.headers)
-                self._limiter.mark_cooldown(service, retry_after)
                 if (
                     retry_after is not None
                     and retry_after > self.config.retry_backoff_max_seconds
@@ -183,6 +206,7 @@ class AsyncSeoulTransport:
                         status_code=429,
                         request=request_info,
                     )
+                limiter.mark_cooldown(service, retry_after)
                 last_error = SeoulRateLimitError(
                     f"서울 Open API 일시 오류 HTTP {response.status_code}",
                     retry_after=retry_after,
@@ -194,13 +218,23 @@ class AsyncSeoulTransport:
                     continue
                 raise last_error
             if response.status_code in {500, 502, 503, 504}:
+                retry_after = _retry_after_seconds(response.headers)
+                if (
+                    retry_after is not None
+                    and retry_after > self.config.retry_backoff_max_seconds
+                ):
+                    raise SeoulRateLimitError(
+                        "서울 Open API 5xx Retry-After가 너무 길어 재시도를 중단했습니다",
+                        retry_after=retry_after,
+                        status_code=response.status_code,
+                        request=request_info,
+                    )
+                limiter.mark_cooldown(service, retry_after)
                 last_error = SeoulRateLimitError(
                     f"서울 Open API 일시 오류 HTTP {response.status_code}"
                 )
                 if attempt + 1 < attempts:
-                    await self._backoff(
-                        attempt, retry_after=_retry_after_seconds(response.headers)
-                    )
+                    await self._backoff(attempt, retry_after=retry_after)
                     continue
             if response.status_code < 200 or response.status_code >= 300:
                 raise SeoulHttpError(

@@ -56,24 +56,26 @@ def parse_subway_positions(
     payload: Mapping[str, Any],
 ) -> tuple[ParsedEnvelope, tuple[SubwayPosition, ...]]:
     envelope = extract_envelope(payload, service="realtimePosition")
-    return envelope, tuple(
-        SubwayPosition(
-            subway_id=text_value(row, "subwayId"),
-            subway_name=text_value(row, "subwayNm"),
-            station_id=text_value(row, "statnId"),
-            station_name=text_value(row, "statnNm"),
-            train_no=text_value(row, "trainNo"),
-            last_received_date=text_value(row, "lastRecptnDt"),
-            received_at=datetime_value(row, "recptnDt"),
-            updn_line=text_value(row, "updnLine"),
-            destination_station_id=text_value(row, "statnTid"),
-            destination_name=text_value(row, "statnTnm"),
-            train_status=text_value(row, "trainSttus"),
-            express=bool_value(row, "directAt"),
-            last_car=bool_value(row, "lstcarAt"),
-            raw=dict(row),
-        )
-        for row in envelope.rows
+    return envelope, tuple(_position(row) for row in envelope.rows)
+
+
+def _position(row: Mapping[str, Any]) -> SubwayPosition:
+    _require_identifier(row, "realtimePosition", "trainNo", "statnId", "statnNm")
+    return SubwayPosition(
+        subway_id=text_value(row, "subwayId"),
+        subway_name=text_value(row, "subwayNm"),
+        station_id=text_value(row, "statnId"),
+        station_name=text_value(row, "statnNm"),
+        train_no=text_value(row, "trainNo"),
+        last_received_date=text_value(row, "lastRecptnDt"),
+        received_at=datetime_value(row, "recptnDt"),
+        updn_line=text_value(row, "updnLine"),
+        destination_station_id=text_value(row, "statnTid"),
+        destination_name=text_value(row, "statnTnm"),
+        train_status=text_value(row, "trainSttus"),
+        express=bool_value(row, "directAt"),
+        last_car=bool_value(row, "lstcarAt"),
+        raw=dict(row),
     )
 
 
@@ -81,23 +83,23 @@ def parse_parking_realtime(
     payload: Mapping[str, Any],
 ) -> tuple[ParsedEnvelope, tuple[ParkingRealtime, ...]]:
     envelope = extract_envelope(payload, service="GetParkingInfo")
-    return envelope, tuple(
-        ParkingRealtime(
-            parking_lot_id=text_value(row, "PKLT_CD", "pklt_cd"),
-            parking_lot_name=text_value(row, "PKLT_NM", "pklt_nm"),
-            address=text_value(row, "ADDR", "addr"),
-            capacity=int_value(row, "TPKCT", "tpkct"),
-            current_vehicle_count=int_value(
-                row, "NOW_PRK_VHCL_CNT", "now_prk_vhcl_cnt"
-            ),
-            current_update_time=text_value(
-                row, "NOW_PRK_VHCL_UPDT_TM", "now_prk_vhcl_updt_tm"
-            ),
-            latitude=float_value(row, "LAT", "lat", "Y座標"),
-            longitude=float_value(row, "LNG", "lng", "X座標"),
-            raw=dict(row),
-        )
-        for row in envelope.rows
+    return envelope, tuple(_parking_realtime(row) for row in envelope.rows)
+
+
+def _parking_realtime(row: Mapping[str, Any]) -> ParkingRealtime:
+    _require_identifier(row, "GetParkingInfo", "PKLT_CD", "PKLT_NM")
+    return ParkingRealtime(
+        parking_lot_id=text_value(row, "PKLT_CD", "pklt_cd"),
+        parking_lot_name=text_value(row, "PKLT_NM", "pklt_nm"),
+        address=text_value(row, "ADDR", "addr"),
+        capacity=int_value(row, "TPKCT", "tpkct"),
+        current_vehicle_count=int_value(row, "NOW_PRK_VHCL_CNT", "now_prk_vhcl_cnt"),
+        current_update_time=text_value(
+            row, "NOW_PRK_VHCL_UPDT_TM", "now_prk_vhcl_updt_tm"
+        ),
+        latitude=float_value(row, "LAT", "lat", "Y座標"),
+        longitude=float_value(row, "LNG", "lng", "X座標"),
+        raw=dict(row),
     )
 
 
@@ -105,49 +107,49 @@ def parse_parking_lots(
     payload: Mapping[str, Any],
 ) -> tuple[ParsedEnvelope, tuple[ParkingLot, ...]]:
     envelope = extract_envelope(payload, service="GetParkInfo")
-    return envelope, tuple(
-        ParkingLot(
-            parking_lot_id=text_value(row, "PKLT_CD", "pklt_cd"),
-            parking_lot_name=text_value(row, "PKLT_NM", "pklt_nm"),
-            address=text_value(row, "ADDR", "addr"),
-            capacity=int_value(row, "TPKCT", "tpkct"),
-            operation_type=text_value(
-                row, "OPRT_STTS", "OPRT_TYPE", "OPER_SE_NM", "oprt_stts"
-            ),
-            weekday_open_time=text_value(
-                row, "WD_OPR_STRT_TM", "WD_OPER_BGNG_TM", "wd_opr_strt_tm"
-            ),
-            weekday_close_time=text_value(
-                row, "WD_OPR_END_TM", "WD_OPER_END_TM", "wd_opr_end_tm"
-            ),
-            saturday_open_time=text_value(
-                row, "SAT_OPR_STRT_TM", "WE_OPER_BGNG_TM", "sat_opr_strt_tm"
-            ),
-            saturday_close_time=text_value(
-                row, "SAT_OPR_END_TM", "WE_OPER_END_TM", "sat_opr_end_tm"
-            ),
-            holiday_open_time=text_value(
-                row,
-                "LH_OPR_STRT_TM",
-                "LHLDY_OPER_BGNG_TM",
-                "LHLDY_BGNG",
-                "holiday_open_time",
-            ),
-            holiday_close_time=text_value(
-                row,
-                "LH_OPR_END_TM",
-                "LHLDY_OPER_END_TM",
-                "LHLDY",
-                "holiday_close_time",
-            ),
-            latitude=float_value(row, "LAT", "lat"),
-            longitude=float_value(row, "LNG", "LOT", "lng"),
-            last_data_sync_time=text_value(
-                row, "LAST_DATA_SYNC_TM", "last_data_sync_tm"
-            ),
-            raw=dict(row),
-        )
-        for row in envelope.rows
+    return envelope, tuple(_parking_lot(row) for row in envelope.rows)
+
+
+def _parking_lot(row: Mapping[str, Any]) -> ParkingLot:
+    _require_identifier(row, "GetParkInfo", "PKLT_CD", "PKLT_NM")
+    return ParkingLot(
+        parking_lot_id=text_value(row, "PKLT_CD", "pklt_cd"),
+        parking_lot_name=text_value(row, "PKLT_NM", "pklt_nm"),
+        address=text_value(row, "ADDR", "addr"),
+        capacity=int_value(row, "TPKCT", "tpkct"),
+        operation_type=text_value(
+            row, "OPRT_STTS", "OPRT_TYPE", "OPER_SE_NM", "oprt_stts"
+        ),
+        weekday_open_time=text_value(
+            row, "WD_OPR_STRT_TM", "WD_OPER_BGNG_TM", "wd_opr_strt_tm"
+        ),
+        weekday_close_time=text_value(
+            row, "WD_OPR_END_TM", "WD_OPER_END_TM", "wd_opr_end_tm"
+        ),
+        saturday_open_time=text_value(
+            row, "SAT_OPR_STRT_TM", "WE_OPER_BGNG_TM", "sat_opr_strt_tm"
+        ),
+        saturday_close_time=text_value(
+            row, "SAT_OPR_END_TM", "WE_OPER_END_TM", "sat_opr_end_tm"
+        ),
+        holiday_open_time=text_value(
+            row,
+            "LH_OPR_STRT_TM",
+            "LHLDY_OPER_BGNG_TM",
+            "LHLDY_BGNG",
+            "holiday_open_time",
+        ),
+        holiday_close_time=text_value(
+            row,
+            "LH_OPR_END_TM",
+            "LHLDY_OPER_END_TM",
+            "LHLDY",
+            "holiday_close_time",
+        ),
+        latitude=float_value(row, "LAT", "lat"),
+        longitude=float_value(row, "LNG", "LOT", "lng"),
+        last_data_sync_time=text_value(row, "LAST_DATA_SYNC_TM", "last_data_sync_tm"),
+        raw=dict(row),
     )
 
 
@@ -189,6 +191,7 @@ def parse_citydata(
 
 
 def _arrival(row: Mapping[str, Any]) -> SubwayArrival:
+    _require_identifier(row, "realtimeStationArrival", "statnId", "statnNm")
     return SubwayArrival(
         subway_id=text_value(row, "subwayId"),
         subway_name=text_value(row, "subwayNm"),
@@ -218,3 +221,8 @@ def _raw_block(mapping: Mapping[str, Any], *names: str) -> Any:
     if isinstance(value, list):
         return [dict(item) if isinstance(item, Mapping) else item for item in value]
     return {}
+
+
+def _require_identifier(row: Mapping[str, Any], service: str, *names: str) -> None:
+    if not any(text_value(row, name) for name in names):
+        raise SeoulParseError(f"{service} row에 식별 필드가 없습니다")
