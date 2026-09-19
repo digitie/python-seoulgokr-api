@@ -68,6 +68,10 @@ asyncio.run(main())
   `ERROR-500/600/601`도 같은 방식으로 제한 재시도하며, `INFO-200`은 정상적인 빈
   결과로 반환한다. upstream `ERROR-337` 또는 명시적인 quota 문구는 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 limiter에 bounded cooldown을 기록한다.
+- 응답 body는 기본 16 MiB(`max_response_bytes`)에서 읽기를 중단하고, 전체역 등
+  caller가 지정한 `max_items` 상한은 typed model을 만들기 전에 적용한다. 페이지 범위와
+  `sample` 기능 제한은 application daily quota가 아닌 `SeoulConfigurationError`로
+  반환한다.
 - 공식 endpoint가 HTTP 형태로 문서화되어 있어 `allow_insecure_http` 기본값은
   `False`다. backend egress/proxy를 명시적으로 신뢰하는 환경에서만 opt-in하고,
   인증키를 브라우저에서 직접 호출하지 않는다. HTTPS 지원 여부와 실제

@@ -25,8 +25,11 @@ from .common import (
 
 def parse_traffic_info(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[TrafficInfo, ...]]:
     envelope = extract_envelope(payload, service="TrafficInfo")
+    _check_row_limit(envelope, max_items, "TrafficInfo")
     items: list[TrafficInfo] = []
     for row in envelope.rows:
         link_id = text_value(row, "link_id", "LINK_ID")
@@ -47,15 +50,21 @@ def parse_traffic_info(
 
 def parse_subway_arrivals(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[SubwayArrival, ...]]:
     envelope = extract_envelope(payload, service="realtimeStationArrival")
+    _check_row_limit(envelope, max_items, "realtimeStationArrival")
     return envelope, tuple(_arrival(row) for row in envelope.rows)
 
 
 def parse_subway_positions(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[SubwayPosition, ...]]:
     envelope = extract_envelope(payload, service="realtimePosition")
+    _check_row_limit(envelope, max_items, "realtimePosition")
     return envelope, tuple(_position(row) for row in envelope.rows)
 
 
@@ -81,8 +90,11 @@ def _position(row: Mapping[str, Any]) -> SubwayPosition:
 
 def parse_parking_realtime(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[ParkingRealtime, ...]]:
     envelope = extract_envelope(payload, service="GetParkingInfo")
+    _check_row_limit(envelope, max_items, "GetParkingInfo")
     return envelope, tuple(_parking_realtime(row) for row in envelope.rows)
 
 
@@ -105,8 +117,11 @@ def _parking_realtime(row: Mapping[str, Any]) -> ParkingRealtime:
 
 def parse_parking_lots(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[ParkingLot, ...]]:
     envelope = extract_envelope(payload, service="GetParkInfo")
+    _check_row_limit(envelope, max_items, "GetParkInfo")
     return envelope, tuple(_parking_lot(row) for row in envelope.rows)
 
 
@@ -155,6 +170,8 @@ def _parking_lot(row: Mapping[str, Any]) -> ParkingLot:
 
 def parse_citydata(
     payload: Mapping[str, Any],
+    *,
+    max_items: int | None = None,
 ) -> tuple[ParsedEnvelope, tuple[CityData, ...]]:
     envelope = extract_citydata_envelope(payload, service="citydata")
     if envelope.result_code == "INFO-200":
@@ -188,6 +205,15 @@ def parse_citydata(
             raw=dict(data),
         ),
     ) if data else ()
+
+
+def _check_row_limit(
+    envelope: ParsedEnvelope, max_items: int | None, service: str
+) -> None:
+    if max_items is not None and len(envelope.rows) > max_items:
+        raise SeoulParseError(
+            f"{service} 응답이 허용된 최대 항목 수({max_items})를 초과했습니다"
+        )
 
 
 def _arrival(row: Mapping[str, Any]) -> SubwayArrival:

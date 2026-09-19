@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from seoulgokr import SeoulOpenDataClient, SeoulOpenDataConfig
 from seoulgokr.errors import SeoulConfigurationError, SeoulQuotaError
+from seoulgokr.rate_limit import RateLimitPolicy, ServiceRateLimiter
 from seoulgokr.transport import AsyncSeoulTransport
 
 
@@ -27,7 +31,7 @@ async def test_sample_key_page_guard_happens_before_network():
         httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
         SeoulOpenDataClient(config=config, http_client=http_client) as client,
     ):
-        with pytest.raises(SeoulQuotaError, match="최대 5건"):
+        with pytest.raises(SeoulConfigurationError, match="최대 5건"):
             await client.traffic_info("link", start_index=1, end_index=7)
     assert called is False
 
@@ -85,7 +89,7 @@ async def test_sample_subway_page_guard_rejects_index_six():
         httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
         SeoulOpenDataClient(config=config, http_client=http_client) as client,
     ):
-        with pytest.raises(SeoulQuotaError, match="0..5"):
+        with pytest.raises(SeoulConfigurationError, match="0..5"):
             await client.subway_arrivals("서울", start_index=0, end_index=6)
 
 
@@ -128,6 +132,50 @@ async def test_http_endpoint_is_fail_closed_by_default():
     async with SeoulOpenDataClient(config=config) as client:
         with pytest.raises(SeoulConfigurationError, match="HTTP"):
             await client.traffic_info("link")
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://user:password@example.com/api",
+        "https://example.com/api?service_key=password",
+        "https://example.com/api#password",
+        "https://example.com:invalid/api",
+    ],
+)
+def test_base_url_rejects_embedded_credentials_and_query_secrets(base_url):
+    with pytest.raises(ValidationError, match="base URL"):
+        SeoulOpenDataConfig(api_key="key", general_base_url=base_url)
+
+
+@pytest.mark.asyncio
+async def test_extended_cooldown_is_not_cleared_by_an_older_waiter():
+    limiter = ServiceRateLimiter()
+    await limiter.cooldown("service", 0.02)
+
+    started = asyncio.get_running_loop().time()
+
+    async def enter_slot() -> None:
+        async with limiter.slot("service", RateLimitPolicy(minimum_interval_seconds=0)):
+            return
+
+    task = asyncio.create_task(enter_slot())
+    await asyncio.sleep(0.005)
+    limiter.mark_cooldown("service", 0.05)
+    await task
+
+    assert asyncio.get_running_loop().time() - started >= 0.04
+
+
+@pytest.mark.asyncio
+async def test_limiter_rejects_conflicting_concurrency_policy():
+    limiter = ServiceRateLimiter()
+    async with limiter.slot("service", RateLimitPolicy(max_concurrency=1)):
+        pass
+
+    with pytest.raises(ValueError, match="max_concurrency"):
+        async with limiter.slot("service", RateLimitPolicy(max_concurrency=2)):
+            pass
 
 
 def test_subway_only_configuration_can_be_created_from_env(monkeypatch):

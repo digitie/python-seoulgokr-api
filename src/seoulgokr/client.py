@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from typing import Any, Self, TypeVar
 
 import httpx
@@ -13,7 +13,6 @@ from .errors import (
     TRANSIENT_UPSTREAM_CODES,
     SeoulConfigurationError,
     SeoulParseError,
-    SeoulQuotaError,
     SeoulUpstreamError,
     is_upstream_quota_error,
 )
@@ -76,11 +75,6 @@ class SeoulOpenDataClient:
                 "config과 api_key/subway_api_key를 동시에 지정할 수 없습니다"
             )
         self.config = config
-        self._secrets = tuple(
-            secret.get_secret_value()
-            for secret in (config.api_key, config.subway_key)
-            if secret is not None
-        )
         self.transport = transport or AsyncSeoulTransport(
             config, http_client=http_client
         )
@@ -169,7 +163,7 @@ class SeoulOpenDataClient:
             self.config.subway_key is not None
             and self.config.subway_key.get_secret_value() == "sample"
         ):
-            raise SeoulQuotaError(
+            raise SeoulConfigurationError(
                 "sample 지하철 키로는 전체역 도착 API를 사용할 수 없습니다"
             )
         if max_items is not None and max_items <= 0:
@@ -280,7 +274,7 @@ class SeoulOpenDataClient:
             self.config.api_key is not None
             and self.config.api_key.get_secret_value() == "sample"
         ):
-            raise SeoulQuotaError(
+            raise SeoulConfigurationError(
                 "sample 일반 키는 citydata의 요청 장소를 보장하지 않으므로 사용할 수 없습니다"
             )
 
@@ -300,7 +294,7 @@ class SeoulOpenDataClient:
         *,
         source_id: str,
         service: str,
-        parser: Callable[[Mapping[str, Any]], tuple[ParsedEnvelope, tuple[T, ...]]],
+        parser: Callable[..., tuple[ParsedEnvelope, tuple[T, ...]]],
         api: str,
         max_items: int | None = None,
         **request_kwargs: Any,
@@ -313,16 +307,15 @@ class SeoulOpenDataClient:
             response = await self.transport.request(
                 service=service, api=api, **request_kwargs
             )
+            recursion_error = False
             try:
                 payload = redact_value(
                     parse_payload(response.content, content_type=response.content_type),
-                    self._secrets,
+                    self._secret_values(),
                 )
-                envelope, items = parser(payload)
-                if max_items is not None and len(items) > max_items:
-                    raise SeoulParseError(
-                        f"{service} 응답이 허용된 최대 항목 수({max_items})를 초과했습니다"
-                    )
+                envelope, items = parser(payload, max_items=max_items)
+            except RecursionError:
+                recursion_error = True
             except SeoulParseError:
                 # Do not retain a raw response object in traceback frame locals.
                 response = None
@@ -354,9 +347,24 @@ class SeoulOpenDataClient:
                 if delay > 0:
                     await asyncio.sleep(delay)
                 continue
+            if recursion_error:
+                response = None
+                payload = {}
+                raise SeoulParseError(
+                    f"{service} 응답이 허용된 중첩 깊이를 초과했습니다"
+                )
             assert response is not None
             return _result(source_id, service, response, envelope, items)
         raise RuntimeError("서울 Open API query loop가 예기치 않게 종료되었습니다")
+
+    def _secret_values(self) -> tuple[str, ...]:
+        """redaction 동안에만 평문 키를 만들고 객체 속성에는 보관하지 않는다."""
+
+        return tuple(
+            secret.get_secret_value()
+            for secret in (self.config.api_key, self.config.subway_key)
+            if secret is not None
+        )
 
 
 def _result(

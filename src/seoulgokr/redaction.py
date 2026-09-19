@@ -4,13 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 REDACTED = "<redacted>"
 
 
 def redact_url(url: str, secrets: tuple[str, ...]) -> str:
-    return redact_text(url, secrets)
+    redacted = redact_text(url, secrets)
+    try:
+        parsed = urlsplit(redacted)
+        hostname = parsed.hostname or ""
+        port = parsed.port
+    except ValueError:
+        return "<invalid-url>"
+    if ":" in hostname and not hostname.startswith("["):
+        hostname = f"[{hostname}]"
+    hostport = hostname if port is None else f"{hostname}:{port}"
+    # Query/fragment/userinfo may contain proxy credentials or other secrets.
+    return urlunsplit((parsed.scheme, hostport, parsed.path, "", ""))
 
 
 def redact_text(value: str, secrets: tuple[str, ...]) -> str:

@@ -2,7 +2,7 @@
 
 ## 현재 상태
 
-- provider 1차 구현, 계약 테스트, 보안 회귀 테스트, 패키지 검증 및 공개 sample live smoke 완료
+- provider 1차 구현, 계약 테스트, 적대적 리뷰 보안 회귀 테스트, 패키지 검증 및 공개 sample live smoke 완료
 - 대상 경로는 최초 확인 시 없었고 새 Git 저장소를 생성함
 - 브랜치: `codex/implement-seoulgokr-api`
 - `src/seoulgokr/`에 config, async transport, retry, limiter, redaction, parser,
@@ -24,6 +24,6 @@
 
 ## 다음 한 작업
 
-예외 `__context__`와 실시간 지하철 quota/cooldown P1 수정 커밋을 push한 뒤 독립 hostile review 2건을
-최신 커밋에서 다시 완료하고, CI와 live smoke 결과가 유지되면 PR #1을 Ready/merge한다. 실제 quota·HTTPS 지원은
-인증키 신청 후 별도 운영 task로 확인한다.
+최신 적대적 리뷰에서 확인된 traceback/응답 제한·limiter race 보강을 커밋하고 독립 hostile review
+2건을 최신 커밋에서 다시 완료한다. CI와 live smoke 결과가 유지되면 PR #1을 Ready/merge한다.
+실제 quota·HTTPS 지원은 인증키 신청 후 별도 운영 task로 확인한다.

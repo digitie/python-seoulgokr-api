@@ -18,6 +18,7 @@ from ..errors import (
     TRANSIENT_UPSTREAM_CODES,
     SeoulParseError,
     SeoulUpstreamError,
+    is_upstream_quota_error,
 )
 
 KOREA_TZ = ZoneInfo("Asia/Seoul")
@@ -52,9 +53,10 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
     looks_xml = "xml" in content_type.lower() or text.startswith("<")
     if not looks_xml:
         json_error = False
+        value: Any = None
         try:
             value = json.loads(text)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             json_error = True
         if json_error:
             # JSONDecodeError.__context__ can retain the raw response body.
@@ -65,9 +67,12 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
         return dict(value)
     xml_error = False
+    root: ET.Element | None = None
+    parsed_value: Any = None
     try:
         root = SafeET.fromstring(text)
-    except (ET.ParseError, DefusedXmlException):
+        parsed_value = _xml_value(root)
+    except (ET.ParseError, DefusedXmlException, RecursionError):
         xml_error = True
     if xml_error:
         # Keep the parser exception, which may include response text, out of
@@ -75,7 +80,8 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
         content = b""
         text = ""
         raise SeoulParseError("XML 응답을 해석할 수 없습니다")
-    return {strip_tag(root.tag): _xml_value(root)}
+    assert root is not None
+    return {strip_tag(root.tag): parsed_value}
 
 
 def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvelope:
@@ -97,7 +103,10 @@ def extract_envelope(payload: Mapping[str, Any], *, service: str) -> ParsedEnvel
                 result_code,
                 result_message or "서울 Open API가 오류를 반환했습니다",
                 service=service,
-                retryable=result_code in TRANSIENT_UPSTREAM_CODES,
+                retryable=(
+                    result_code in TRANSIENT_UPSTREAM_CODES
+                    and not is_upstream_quota_error(result_code, result_message or "")
+                ),
             )
     if result_code != "INFO-200" and not _has_data_marker(payload, service_payload):
         raise SeoulParseError(
@@ -131,7 +140,10 @@ def extract_citydata_envelope(
             result_code,
             result_message or "서울 Open API가 오류를 반환했습니다",
             service=service,
-            retryable=result_code in TRANSIENT_UPSTREAM_CODES,
+            retryable=(
+                result_code in TRANSIENT_UPSTREAM_CODES
+                and not is_upstream_quota_error(result_code, result_message or "")
+            ),
         )
     return ParsedEnvelope(
         payload=payload,

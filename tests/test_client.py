@@ -458,7 +458,7 @@ async def test_application_quota_error_sets_shared_bounded_cooldown():
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(transport=transport) as first_http:
         first = SeoulOpenDataClient(config=config, http_client=first_http)
-        with pytest.raises(SeoulUpstreamError, match="ERROR-337"):
+        with pytest.raises(SeoulUpstreamError, match="ERROR-337") as error:
             await first.traffic_info("link")
 
     started = asyncio.get_running_loop().time()
@@ -470,6 +470,7 @@ async def test_application_quota_error_sets_shared_bounded_cooldown():
     assert result.items[0].link_id == "link"
     assert elapsed >= 0.04
     assert calls == 2
+    assert error.value.retryable is False
 
 
 @pytest.mark.asyncio
@@ -505,6 +506,69 @@ async def test_quota_message_disables_transient_retry():
             await client.traffic_info("link")
 
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_non_quota_limit_message_keeps_transient_retry():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "RESULT": {
+                        "CODE": "ERROR-500",
+                        "MESSAGE": "요청 처리 시간 제한 초과",
+                    }
+                },
+            )
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="transient-limit-key",
+        max_retries=1,
+        general_min_interval_seconds=0,
+        retry_backoff_seconds=0,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        result = await client.traffic_info("link")
+
+    assert result.items[0].link_id == "link"
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_oversized_response_is_rejected_before_parsing(config):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b'{"TrafficInfo":"unit-fixture-key",' + b" " * 2048,
+        )
+
+    limited_config = config.model_copy(update={"max_response_bytes": 1024})
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=limited_config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulHttpError, match="허용된 크기") as error:
+            await client.traffic_info("link")
+
+    assert "unit-fixture-key" not in _traceback_locals_repr(error.value)
 
 
 @pytest.mark.asyncio

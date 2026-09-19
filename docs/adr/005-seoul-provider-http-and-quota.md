@@ -22,6 +22,11 @@
   기록한다. 지정 시간이 client backoff 상한보다 길면 자동 재시도하지 않는다.
 - application-level `ERROR-337` 또는 명시적인 quota 문구는 자동 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 bounded cooldown을 기록한다.
+- 응답 body는 `max_response_bytes`(기본 16 MiB)로 제한하고, `max_items`는 row를 typed
+  model로 변환하기 전에 검사한다. 페이지 범위·sample capability 오류는 일일 quota와
+  구분해 `SeoulConfigurationError`로 반환한다.
+- 동일 limiter의 cooldown deadline은 더 늦게 설정된 값이 이전 waiter에 의해 지워지지
+  않도록 재검사하며, 공유 limiter의 `max_concurrency` 정책은 scope에 고정한다.
 
 ## 근거
 

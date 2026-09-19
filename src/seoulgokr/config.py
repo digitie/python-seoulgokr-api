@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from typing import ClassVar
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
@@ -40,6 +41,9 @@ class SeoulOpenDataConfig(BaseModel):
     allow_insecure_http: bool = False
     allow_all_station_arrivals: bool = False
     all_station_arrivals_max_items: int = Field(default=5000, gt=0)
+    max_response_bytes: int = Field(
+        default=16 * 1024 * 1024, ge=1024, le=128 * 1024 * 1024
+    )
     user_agent: str = "python-seoulgokr-api/0.1"
 
     _KEY_ENV_NAMES: ClassVar[tuple[str, ...]] = (
@@ -71,6 +75,18 @@ class SeoulOpenDataConfig(BaseModel):
         value = value.strip()
         if not value.startswith(("http://", "https://")):
             raise ValueError("base URL은 http:// 또는 https://로 시작해야 합니다")
+        try:
+            parsed = urlsplit(value)
+            _ = parsed.port
+        except ValueError as exc:
+            raise ValueError("base URL의 host/port가 올바르지 않습니다") from exc
+        if (
+            parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("base URL에는 userinfo·query·fragment를 넣을 수 없습니다")
         return value.rstrip("/")
 
     @field_validator("service_daily_budgets")

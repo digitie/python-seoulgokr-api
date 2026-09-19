@@ -21,6 +21,11 @@
   P1을 다시 보강했다. transport/client/parser가 오류를 재던지기 전에 민감한 local을
   지우고, `ERROR-500`이어도 명시적인 quota 문구가 있으면 재시도하지 않도록 했다.
   한국어 quota 문구 회귀 테스트를 포함해 WSL2 Ruff·mypy·pytest 29개가 통과했다.
+- 추가 적대적 리뷰에서 확인한 취소 시 httpx traceback의 URL 잔존, 응답 body 무제한 적재,
+  base URL credential/query, cooldown 확장 race, shared concurrency 정책 교체 문제를
+  반영했다. 응답 16 MiB·row 상한을 선제 적용하고 quota `retryable` 의미를 일치시켰으며,
+  페이지/sample 제한은 configuration error로 분리했다. 회귀 테스트 포함 WSL2 pytest는
+  37개로 늘었다.
   두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.

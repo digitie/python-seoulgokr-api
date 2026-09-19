@@ -56,20 +56,25 @@ class ServiceRateLimiter:
         self._states_lock = asyncio.Lock()
         self._timezone = ZoneInfo(timezone_name)
 
-    _shared: ClassVar[dict[tuple[str, int, str], ServiceRateLimiter]] = {}
+    _shared: ClassVar[dict[tuple[str, int, str, int], ServiceRateLimiter]] = {}
 
     @classmethod
-    def shared(cls, scope: str, *, timezone_name: str) -> ServiceRateLimiter:
+    def shared(
+        cls, scope: str, *, timezone_name: str, max_concurrency: int = 1
+    ) -> ServiceRateLimiter:
         """동일 key scope의 client가 같은 이벤트 루프에서 limiter를 공유한다."""
 
         try:
             loop_id = id(asyncio.get_running_loop())
         except RuntimeError:
             loop_id = 0
-        shared_key = (scope, loop_id, timezone_name)
+        shared_key = (scope, loop_id, timezone_name, max_concurrency)
         limiter = cls._shared.get(shared_key)
         if limiter is None:
-            limiter = cls(timezone_name=timezone_name)
+            limiter = cls(
+                default_policy=RateLimitPolicy(max_concurrency=max_concurrency),
+                timezone_name=timezone_name,
+            )
             cls._shared[shared_key] = limiter
         return limiter
 
@@ -112,34 +117,45 @@ class ServiceRateLimiter:
     ) -> AsyncIterator[None]:
         policy = policy or self.default_policy
         state = await self._state(service)
-        if state.semaphore is None or state.semaphore_limit != policy.max_concurrency:
-            state.semaphore = asyncio.Semaphore(policy.max_concurrency)
-            state.semaphore_limit = policy.max_concurrency
-        async with state.semaphore:
+        async with state.lock:
+            if state.semaphore is None:
+                state.semaphore = asyncio.Semaphore(policy.max_concurrency)
+                state.semaphore_limit = policy.max_concurrency
+            elif state.semaphore_limit != policy.max_concurrency:
+                raise ValueError(
+                    "동일 limiter의 max_concurrency 정책을 변경할 수 없습니다"
+                )
+            semaphore = state.semaphore
+        async with semaphore:
             async with state.lock:
-                if state.cooldown_until is not None:
-                    wait_for = state.cooldown_until - time.monotonic()
+                while True:
+                    while state.cooldown_until is not None:
+                        cooldown_until = state.cooldown_until
+                        wait_for = cooldown_until - time.monotonic()
+                        if wait_for > 0:
+                            await self._sleep(wait_for)
+                            continue
+                        if state.cooldown_until == cooldown_until:
+                            state.cooldown_until = None
+                    self._rollover(state)
+                    if (
+                        policy.daily_budget is not None
+                        and state.calls_today >= policy.daily_budget
+                    ):
+                        raise SeoulQuotaError(
+                            f"서비스 {service}의 애플리케이션 일일 호출 예산({policy.daily_budget})을 소진했습니다"
+                        )
+                    wait_for = 0.0
+                    if state.last_started is not None:
+                        wait_for = policy.minimum_interval_seconds - (
+                            time.monotonic() - state.last_started
+                        )
                     if wait_for > 0:
                         await self._sleep(wait_for)
-                    state.cooldown_until = None
-                self._rollover(state)
-                if (
-                    policy.daily_budget is not None
-                    and state.calls_today >= policy.daily_budget
-                ):
-                    raise SeoulQuotaError(
-                        f"서비스 {service}의 애플리케이션 일일 호출 예산({policy.daily_budget})을 소진했습니다"
-                    )
-                wait_for = 0.0
-                if state.last_started is not None:
-                    wait_for = policy.minimum_interval_seconds - (
-                        time.monotonic() - state.last_started
-                    )
-                if wait_for > 0:
-                    await self._sleep(wait_for)
-                    self._rollover(state)
-                state.last_started = time.monotonic()
-                state.calls_today += 1
+                        continue
+                    state.last_started = time.monotonic()
+                    state.calls_today += 1
+                    break
             try:
                 yield
             finally:
