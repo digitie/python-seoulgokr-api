@@ -17,6 +17,10 @@
 - 두 번째 최종 리뷰에서 확인한 P1도 반영했다. 실시간 도착·위치·전체역을
   `realtimeSubway` 일일 예산으로 통합하고, `ERROR-337`/quota 문구를 bounded cooldown으로
   기록하는 회귀 테스트를 추가했다. WSL2 전체 테스트는 28개로 늘어났다.
+- 후속 적대적 리뷰에서 확인한 traceback frame locals의 raw URL·응답 본문·인증키 잔존
+  P1을 다시 보강했다. transport/client/parser가 오류를 재던지기 전에 민감한 local을
+  지우고, `ERROR-500`이어도 명시적인 quota 문구가 있으면 재시도하지 않도록 했다.
+  한국어 quota 문구 회귀 테스트를 포함해 WSL2 Ruff·mypy·pytest 29개가 통과했다.
   두 독립 리뷰의 최신 커밋 결과와 CI가 모두 통과한 뒤 PR #1 merge gate를 진행한다.
 
 - 사용자 요청으로 저장소의 목적을 국내 여행용 통합 교통정보 라이브러리/API로 명시했다.

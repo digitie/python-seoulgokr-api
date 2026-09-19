@@ -37,7 +37,7 @@ from .parsers import (
     parse_traffic_info,
 )
 from .redaction import redact_value
-from .transport import AsyncSeoulTransport
+from .transport import AsyncSeoulTransport, TransportResponse
 
 T = TypeVar("T")
 
@@ -308,6 +308,7 @@ class SeoulOpenDataClient:
         """transport 오류와 HTTP 200 application-level 일시 오류를 함께 처리한다."""
 
         transient_codes = TRANSIENT_UPSTREAM_CODES
+        response: TransportResponse | None = None
         for attempt in range(self.config.max_retries + 1):
             response = await self.transport.request(
                 service=service, api=api, **request_kwargs
@@ -322,19 +323,30 @@ class SeoulOpenDataClient:
                     raise SeoulParseError(
                         f"{service} 응답이 허용된 최대 항목 수({max_items})를 초과했습니다"
                     )
+            except SeoulParseError:
+                # Do not retain a raw response object in traceback frame locals.
+                response = None
+                payload = {}
+                raise
             except SeoulUpstreamError as exc:
                 exc.request = dict(response.request)
-                if is_upstream_quota_error(exc.code, exc.message):
+                quota_error = is_upstream_quota_error(exc.code, exc.message)
+                if quota_error:
                     self.transport.mark_cooldown(
                         api=api,
                         service=service,
                         delay_seconds=self.config.upstream_quota_cooldown_seconds,
                     )
                 if (
-                    exc.code not in transient_codes
+                    quota_error
+                    or exc.code not in transient_codes
                     or attempt >= self.config.max_retries
                 ):
+                    response = None
+                    payload = {}
                     raise
+                response = None
+                payload = {}
                 delay = min(
                     self.config.retry_backoff_seconds * (2**attempt),
                     self.config.retry_backoff_max_seconds,
@@ -342,6 +354,7 @@ class SeoulOpenDataClient:
                 if delay > 0:
                     await asyncio.sleep(delay)
                 continue
+            assert response is not None
             return _result(source_id, service, response, envelope, items)
         raise RuntimeError("서울 Open API query loop가 예기치 않게 종료되었습니다")
 

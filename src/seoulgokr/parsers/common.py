@@ -44,6 +44,8 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
     if decode_error:
         # Keep this raise outside the except block.  Otherwise the original
         # UnicodeDecodeError retains the complete response bytes in __context__.
+        content = b""
+        text = ""
         raise SeoulParseError("서울 Open API 응답이 UTF-8이 아닙니다")
     if not text:
         raise SeoulParseError("서울 Open API가 빈 응답을 반환했습니다")
@@ -56,6 +58,8 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
             json_error = True
         if json_error:
             # JSONDecodeError.__context__ can retain the raw response body.
+            content = b""
+            text = ""
             raise SeoulParseError("JSON 응답을 해석할 수 없습니다")
         if not isinstance(value, Mapping):
             raise SeoulParseError("JSON 응답 최상위가 object가 아닙니다")
@@ -68,6 +72,8 @@ def parse_payload(content: bytes, *, content_type: str = "") -> Mapping[str, Any
     if xml_error:
         # Keep the parser exception, which may include response text, out of
         # the public exception chain.
+        content = b""
+        text = ""
         raise SeoulParseError("XML 응답을 해석할 수 없습니다")
     return {strip_tag(root.tag): _xml_value(root)}
 

@@ -18,6 +18,17 @@ from seoulgokr.parsers.services import parse_parking_lots
 from seoulgokr.transport import AsyncSeoulTransport
 
 
+def _traceback_locals_repr(error: BaseException) -> str:
+    frames: list[object] = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        module_name = traceback.tb_frame.f_globals.get("__name__", "")
+        if str(module_name).startswith("seoulgokr."):
+            frames.append(dict(traceback.tb_frame.f_locals))
+        traceback = traceback.tb_next
+    return repr(frames)
+
+
 @pytest.mark.asyncio
 async def test_traffic_xml_is_typed_and_key_is_redacted(config):
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -462,6 +473,41 @@ async def test_application_quota_error_sets_shared_bounded_cooldown():
 
 
 @pytest.mark.asyncio
+async def test_quota_message_disables_transient_retry():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "RESULT": {
+                    "CODE": "ERROR-500",
+                    "MESSAGE": "요청 한도를 초과했습니다",
+                }
+            },
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="quota-message-key",
+        max_retries=1,
+        general_min_interval_seconds=0,
+        retry_backoff_seconds=0,
+        upstream_quota_cooldown_seconds=0.01,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulUpstreamError, match="ERROR-500"):
+            await client.traffic_info("link")
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status_code", [429, 503])
 async def test_oversized_retry_after_is_rejected_before_sleep(config, status_code):
     sleeps: list[float] = []
@@ -523,6 +569,7 @@ async def test_transport_errors_are_normalized_without_key_cause(config, error_t
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
     assert "unit-fixture-key" not in repr(error.value)
+    assert "unit-fixture-key" not in _traceback_locals_repr(error.value)
 
 
 @pytest.mark.asyncio
@@ -544,6 +591,7 @@ async def test_malformed_response_does_not_keep_key_in_parse_cause(config):
     assert error.value.__cause__ is None
     assert error.value.__context__ is None
     assert "unit-fixture-key" not in repr(error.value)
+    assert "unit-fixture-key" not in _traceback_locals_repr(error.value)
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,10 @@ _QUOTA_MESSAGE_MARKERS = (
     "daily limit",
     "limit exceeded",
     "한도 초과",
+    "요청 한도",
     "호출 한도",
+    "호출 제한",
+    "제한 초과",
     "일일 호출",
     "호출 횟수",
 )
