@@ -1,0 +1,60 @@
+"""서울 Open API 오류 타입."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+
+
+class SeoulGokrError(Exception):
+    """provider 오류의 공통 기반 클래스."""
+
+
+class SeoulConfigurationError(SeoulGokrError):
+    """인증키·URL·호출 설정이 유효하지 않다."""
+
+
+class SeoulRateLimitError(SeoulGokrError):
+    """호출 간격 또는 동시성 제한으로 현재 호출을 수행할 수 없다."""
+
+
+class SeoulQuotaError(SeoulRateLimitError):
+    """애플리케이션이 설정한 일일 예산을 소진했다."""
+
+
+class SeoulParseError(SeoulGokrError):
+    """응답 형식 또는 필드가 계약과 맞지 않는다."""
+
+
+class SeoulHttpError(SeoulGokrError):
+    """HTTP 오류다."""
+
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        request: Mapping[str, str] | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.request = dict(request or {})
+        super().__init__(f"서울 Open API HTTP {status_code}: {message}")
+
+
+class SeoulUpstreamError(SeoulGokrError):
+    """HTTP 200 안에 담긴 서울 API application-level 오류다."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        service: str,
+        request: Mapping[str, str] | None = None,
+        retryable: bool = False,
+    ) -> None:
+        self.code = code
+        self.message = message
+        self.service = service
+        self.request = dict(request or {})
+        self.retryable = retryable
+        super().__init__(f"서울 Open API {service} {code}: {message}")
