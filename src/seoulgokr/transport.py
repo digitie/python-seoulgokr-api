@@ -45,11 +45,15 @@ class AsyncSeoulTransport:
         limiter: ServiceRateLimiter | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
     ) -> None:
-        self.config = config
+        try:
+            validated_config = config.validated_copy()
+        finally:
+            config = None  # type: ignore[assignment]
+        self.config = validated_config
         self._client = http_client or httpx.AsyncClient(
-            timeout=httpx.Timeout(config.timeout_seconds),
+            timeout=httpx.Timeout(validated_config.timeout_seconds),
             headers={
-                "User-Agent": config.user_agent,
+                "User-Agent": validated_config.user_agent,
                 "Accept": "application/json, application/xml",
             },
         )
@@ -161,8 +165,9 @@ class AsyncSeoulTransport:
     def _limiter_for(self, api: str) -> ServiceRateLimiter:
         if self._provided_limiter is not None:
             return self._provided_limiter
-        limiter = self._limiters.get(api)
-        if limiter is None:
+        key = ""
+        base_url = ""
+        try:
             if api == "general":
                 key = (
                     self.config.api_key.get_secret_value()
@@ -184,8 +189,14 @@ class AsyncSeoulTransport:
                 timezone_name=self.config.quota_timezone,
                 max_concurrency=self.config.max_concurrency,
             )
+            # Re-resolve the scope on every request. Config has validated
+            # assignment enabled, and changing credentials/endpoint/policy
+            # must not silently reuse a stale limiter.
             self._limiters[api] = limiter
-        return limiter
+            return limiter
+        finally:
+            key = ""
+            base_url = ""
 
     def mark_cooldown(
         self, *, api: str, service: str, delay_seconds: float | None
@@ -317,9 +328,9 @@ class AsyncSeoulTransport:
                     if attempt + 1 < attempts:
                         await self._backoff(attempt, retry_after=retry_after)
                         continue
+                    assert isinstance(last_error, SeoulRateLimitError)
                     error = last_error
                     sanitize_locals()
-                    assert error is not None
                     raise error
                 if response_status in {500, 502, 503, 504}:
                     retry_after = _retry_after_seconds(response_headers)
@@ -348,11 +359,11 @@ class AsyncSeoulTransport:
                     if attempt + 1 < attempts:
                         await self._backoff(attempt, retry_after=retry_after)
                         continue
+                    assert isinstance(last_error, SeoulRateLimitError)
+                    error = last_error
+                    sanitize_locals()
+                    raise error
                 if response_status < 200 or response_status >= 300:
-                    if isinstance(last_error, SeoulRateLimitError):
-                        error = last_error
-                        sanitize_locals()
-                        raise error
                     error = SeoulHttpError(
                         response_status,
                         "서울 Open API가 HTTP 오류를 반환했습니다",

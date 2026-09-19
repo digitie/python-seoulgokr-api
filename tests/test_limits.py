@@ -14,6 +14,17 @@ from seoulgokr.rate_limit import RateLimitPolicy, ServiceRateLimiter
 from seoulgokr.transport import AsyncSeoulTransport
 
 
+def _traceback_locals_repr(error: BaseException) -> str:
+    frames: list[object] = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        module_name = traceback.tb_frame.f_globals.get("__name__", "")
+        if str(module_name).startswith("seoulgokr."):
+            frames.append(dict(traceback.tb_frame.f_locals))
+        traceback = traceback.tb_next
+    return repr(frames)
+
+
 @pytest.mark.asyncio
 async def test_sample_key_page_guard_happens_before_network():
     called = False
@@ -166,6 +177,16 @@ def test_base_url_canonicalizes_host_default_port_and_path(value, expected):
     assert validate_base_url(value) == expected
 
 
+def test_from_env_validation_does_not_keep_api_key_in_traceback(monkeypatch):
+    secret = "from-env-traceback-secret"
+    monkeypatch.setenv("SEOUL_OPEN_DATA_API_KEY", secret)
+
+    with pytest.raises(ValidationError) as error:
+        SeoulOpenDataConfig.from_env(timeout_seconds=0)
+
+    assert secret not in _traceback_locals_repr(error.value)
+
+
 @pytest.mark.asyncio
 async def test_model_copy_base_url_is_revalidated_before_request():
     config = SeoulOpenDataConfig(
@@ -173,14 +194,8 @@ async def test_model_copy_base_url_is_revalidated_before_request():
         general_min_interval_seconds=0,
         allow_insecure_http=True,
     ).model_copy(update={"general_base_url": "https://example.com/api?secret=key"})
-    async with (
-        httpx.AsyncClient(
-            transport=httpx.MockTransport(lambda _: httpx.Response(200))
-        ) as http_client,
-        SeoulOpenDataClient(config=config, http_client=http_client) as client,
-    ):
-        with pytest.raises(ValueError, match="base URL"):
-            await client.traffic_info("link")
+    with pytest.raises(ValueError, match="base URL"):
+        SeoulOpenDataClient(config=config)
 
 
 @pytest.mark.asyncio
@@ -214,10 +229,69 @@ async def test_same_scope_rejects_conflicting_max_concurrency():
         async with SeoulOpenDataClient(
             config=second_config, http_client=http_client
         ) as second:
-            with pytest.raises(ValueError, match="max_concurrency"):
+            with pytest.raises(ValueError, match="max_concurrency") as error:
                 await second.traffic_info("link")
 
+    assert "policy-conflict-key" not in _traceback_locals_repr(error.value)
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_mutating_client_config_cannot_change_shared_max_concurrency():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/xml"},
+            content=(
+                "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+                "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+            ).encode(),
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="mutable-policy-key",
+        max_concurrency=1,
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        await client.traffic_info("link")
+        client.config.max_concurrency = 2
+        with pytest.raises(ValueError, match="max_concurrency"):
+            await client.traffic_info("link")
+
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_model_copy_secret_is_validated_before_transport(config):
+    copied = config.model_copy(update={"api_key": "raw-copy-key"})
+    response = httpx.Response(
+        200,
+        headers={"content-type": "application/xml"},
+        content=(
+            "<TrafficInfo><RESULT><CODE>INFO-000</CODE><MESSAGE>정상</MESSAGE>"
+            "</RESULT><row><link_id>link</link_id></row></TrafficInfo>"
+        ).encode(),
+    )
+    async with (
+        httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: response)
+        ) as http_client,
+        SeoulOpenDataClient(config=copied, http_client=http_client) as client,
+    ):
+        result = await client.traffic_info("link")
+
+    assert client.config.api_key is not None
+    assert client.config.api_key.get_secret_value() == "raw-copy-key"
+    assert result.items[0].link_id == "link"
 
 
 @pytest.mark.asyncio

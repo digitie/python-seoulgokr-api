@@ -64,7 +64,7 @@ asyncio.run(main())
   값을 조정하되, 확인되지 않은 일반 서비스 quota는 추정하지 않는다.
 - `service_daily_budgets`로 애플리케이션 자체 일일 예산을 설정할 수 있다. 미확인
   upstream quota를 코드에서 임의로 주장하지 않는다.
-- timeout, HTTP 429/5xx, 네트워크 오류는 bounded retry를 사용한다. HTTP 200 본문의
+- timeout, HTTP 429와 transient 5xx(500/502/503/504), 네트워크 오류는 bounded retry를 사용한다. HTTP 200 본문의
   `ERROR-500/600/601`도 같은 방식으로 제한 재시도하며, `INFO-200`은 정상적인 빈
   결과로 반환한다. upstream `ERROR-337` 또는 명시적인 quota 문구는 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 limiter에 bounded cooldown을 기록한다.

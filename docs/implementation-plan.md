@@ -134,7 +134,7 @@ src/seoulgokr/
 - `realtimeStationArrival` 역 조회 응답과 `recptnDt` 지연 사례
 - `realtimePosition` 노선 조회 응답
 - `citydata` 장소 단위 응답(교통·주차 block 포함)
-- 429/5xx/network timeout mock
+- 429/transient 5xx/network timeout mock
 
 테스트는 다음을 보장해야 한다.
 

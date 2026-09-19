@@ -63,8 +63,13 @@ class SeoulOpenDataClient:
                 )
             if config is None:
                 config = transport.config
-            elif config != transport.config:
-                raise ValueError("config와 transport.config가 일치해야 합니다")
+            else:
+                try:
+                    validated_config = config.validated_copy()
+                finally:
+                    config = None  # type: ignore[assignment]
+                if validated_config != transport.config:
+                    raise ValueError("config와 transport.config가 일치해야 합니다")
         elif config is None:
             config = SeoulOpenDataConfig.from_env(
                 api_key=api_key, subway_api_key=subway_api_key
@@ -73,10 +78,16 @@ class SeoulOpenDataClient:
             raise ValueError(
                 "config과 api_key/subway_api_key를 동시에 지정할 수 없습니다"
             )
-        self.config = config
-        self.transport = transport or AsyncSeoulTransport(
-            config, http_client=http_client
-        )
+        if transport is None:
+            assert config is not None
+            try:
+                created_transport = AsyncSeoulTransport(config, http_client=http_client)
+            finally:
+                config = None  # type: ignore[assignment]
+            self.transport = created_transport
+        else:
+            self.transport = transport
+        self.config = self.transport.config
         self._owns_transport = transport is None
 
     async def __aenter__(self) -> Self:

@@ -634,6 +634,29 @@ async def test_final_5xx_preserves_retry_after(config):
 
 
 @pytest.mark.asyncio
+async def test_final_non_transient_status_is_not_replaced_by_previous_5xx(config):
+    responses = [
+        httpx.Response(503, headers={"Retry-After": "0"}),
+        httpx.Response(404),
+    ]
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return responses.pop(0)
+
+    retry_config = config.model_copy(
+        update={"max_retries": 1, "retry_backoff_seconds": 0}
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=retry_config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulHttpError) as error:
+            await client.traffic_info("link")
+
+    assert error.value.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_injected_http_client_still_has_a_timeout():
     async def handler(request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(0.05)

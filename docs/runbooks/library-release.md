@@ -34,7 +34,7 @@ provider 1차 구현과 공개 sample live smoke가 완료된 상태다. 이 run
 
 - `INFO-100`, `ERROR-300`, `ERROR-301`, `ERROR-310`, `ERROR-331`~`ERROR-336`은
   요청/설정 오류로 분류하고 자동 retry하지 않는다.
-- `ERROR-500`, `ERROR-600`, `ERROR-601`, HTTP 5xx, timeout은 bounded retry 후
+- `ERROR-500`, `ERROR-600`, `ERROR-601`, transient HTTP 5xx(500/502/503/504), timeout은 bounded retry 후
   upstream 장애로 기록한다.
 - 429 또는 quota 초과는 limiter cooldown으로 막고, 공식 reset 정보가 없으면
   추정해 무기한 대기하지 말고 운영자 확인을 요구한다.

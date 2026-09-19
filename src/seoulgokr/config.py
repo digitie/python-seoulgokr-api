@@ -7,7 +7,14 @@ from typing import ClassVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    field_validator,
+)
 
 from .errors import SeoulConfigurationError
 
@@ -101,28 +108,62 @@ class SeoulOpenDataConfig(BaseModel):
         우선한다.
         """
 
-        key = api_key if api_key is not None else _first_env(cls._KEY_ENV_NAMES)
-        subway_key = overrides.pop("subway_api_key", None)
-        if subway_key is None:
-            subway_key = _first_env(cls._SUBWAY_KEY_ENV_NAMES)
-        values: dict[str, object] = dict(overrides)
-        values["api_key"] = key
-        if subway_key is not None:
-            values["subway_api_key"] = subway_key
-        if "allow_insecure_http" not in values:
-            insecure = os.getenv("SEOUL_OPEN_DATA_ALLOW_INSECURE_HTTP")
-            if insecure is not None:
-                values["allow_insecure_http"] = insecure
-        if not key and not subway_key:
-            names = ", ".join((*cls._KEY_ENV_NAMES, *cls._SUBWAY_KEY_ENV_NAMES[:2]))
-            raise SeoulConfigurationError(
-                f"서울 Open API 인증키가 없습니다. 다음 환경변수 중 하나를 설정하세요: {names}"
-            )
-        return cls.model_validate(values)
+        key: str | SecretStr | None = None
+        subway_key: object = None
+        values: dict[str, object] = {}
+        try:
+            key = api_key if api_key is not None else _first_env(cls._KEY_ENV_NAMES)
+            subway_key = overrides.pop("subway_api_key", None)
+            if subway_key is None:
+                subway_key = _first_env(cls._SUBWAY_KEY_ENV_NAMES)
+            values = dict(overrides)
+            values["api_key"] = key
+            if subway_key is not None:
+                values["subway_api_key"] = subway_key
+            if "allow_insecure_http" not in values:
+                insecure = os.getenv("SEOUL_OPEN_DATA_ALLOW_INSECURE_HTTP")
+                if insecure is not None:
+                    values["allow_insecure_http"] = insecure
+            if not key and not subway_key:
+                names = ", ".join((*cls._KEY_ENV_NAMES, *cls._SUBWAY_KEY_ENV_NAMES[:2]))
+                raise SeoulConfigurationError(
+                    f"서울 Open API 인증키가 없습니다. 다음 환경변수 중 하나를 설정하세요: {names}"
+                )
+            return cls.model_validate(values)
+        finally:
+            # Validation errors can be inspected with their traceback.  Do not
+            # leave environment/API key strings in this frame's locals.
+            api_key = None
+            key = None
+            subway_key = None
+            values.clear()
+            overrides.clear()
 
     @property
     def subway_key(self) -> SecretStr | None:
         return self.subway_api_key or self.api_key
+
+    def validated_copy(self) -> SeoulOpenDataConfig:
+        """``model_copy(update=...)``로 우회된 값을 실행 전 재검증한다."""
+
+        values: dict[str, object] = {}
+        try:
+            for field_name in ("api_key", "subway_api_key"):
+                secret = getattr(self, field_name)
+                if secret is not None and not isinstance(secret, SecretStr):
+                    object.__setattr__(self, field_name, SecretStr(str(secret)))
+            values = self.model_dump()
+            return type(self).model_validate(values)
+        except ValidationError as exc:
+            details = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+                for error in exc.errors(include_url=False)
+            )
+            raise ValueError(
+                f"서울 Open API 설정이 유효하지 않습니다: {details}"
+            ) from None
+        finally:
+            values.clear()
 
     def policy_for(self, service: str) -> tuple[float, int | None]:
         """서비스별 최소 간격과 애플리케이션 예산을 반환한다."""
