@@ -7,11 +7,12 @@
 - 조사 기준 저장소: `F:\dev\kor-travel-transport`
 - 형제 프로젝트 조사 경로: `F:\dev\kor-travel-map`
 - 조사 기준일: `2026-09-19` (KST)
-- 현재 브랜치: `codex/plan-scaffold`
-- 원격 저장소: 아직 생성·등록·push하지 않음
+- 현재 브랜치: `codex/implement-seoulgokr-api`
+- 원격 저장소: `github.com/digitie/python-seoulgokr-api` 생성·등록 완료
+- Draft PR: `https://github.com/digitie/python-seoulgokr-api/pull/1`
 
 대상 경로는 최초 확인 시 존재하지 않았다. 따라서 빈 Git 저장소를 만들고 계획
-단계에 필요한 최소 패키지 디렉터리만 추가했다. 대상 경로가 이미 존재할 때
+단계의 문서·스캐폴딩 뒤 provider 구현을 추가했다. 대상 경로가 이미 존재할 때
 기존 파일을 덮어쓰지 않도록 하는 보호 조건도 실행 전에 확인했다.
 
 ## 원 프로젝트 문서 복제 정책
@@ -54,4 +55,3 @@ provider는 저장소와 API 서버 사이의 재사용 가능한 경계로만 �
 애플리케이션 구현 세부사항을 이 저장소에 자동 적용하지 않는다. 이 저장소에서
 새로 만드는 문서는 한국어로 작성하고, 공식 API 식별자·필드명·URL·환경변수명은
 원문 표기를 유지한다.
-

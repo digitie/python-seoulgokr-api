@@ -4,12 +4,13 @@
 
 - provider 1차 구현 및 계약 테스트 완료
 - 대상 경로는 최초 확인 시 없었고 새 Git 저장소를 생성함
-- 브랜치: `codex/plan-scaffold`
+- 브랜치: `codex/implement-seoulgokr-api`
 - `src/seoulgokr/`에 config, async transport, retry, limiter, redaction, parser,
   typed models, client facade를 구현함
 - `kor-travel-transport` 파일은 수정하지 않음
 - `kor-travel-map`의 비밀값은 읽거나 복사하지 않음
-- GitHub remote/repository 생성·등록·push를 하지 않음
+- GitHub 원격 `github.com/digitie/python-seoulgokr-api` 생성·등록·feature branch
+  push 완료, Draft PR #1 생성
 
 ## 완료한 조사
 
@@ -23,7 +24,6 @@
 
 ## 다음 한 작업
 
-WSL2에서 clean install을 포함한 테스트·lint·typing·package build를 마친 뒤,
-변경 내용을 commit하고 사용자가 승인한 원격 `github.com/digitie/python-seoulgokr-api`
-를 생성해 feature branch/Draft PR을 올린다. 실제 quota·HTTPS 정책은 신청 후
-live smoke 전에 문서에 갱신한다.
+Draft PR #1에 대한 CI와 James/Popper 적대적 리뷰를 완료한 뒤, 실제 quota·HTTPS
+정책을 신청 후 live smoke에서 확인하고 결과를 문서에 갱신한다. P0/P1 blocker가
+없을 때만 사용자가 요청한 merge gate를 진행한다.
