@@ -270,6 +270,39 @@ async def test_upstream_error_is_not_silently_treated_as_empty(config):
 
 
 @pytest.mark.asyncio
+async def test_transport_and_application_share_one_retry_budget():
+    calls = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls <= 2:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={
+                "TrafficInfo": {"RESULT": {"CODE": "ERROR-500", "MESSAGE": "일시 오류"}}
+            },
+        )
+
+    config = SeoulOpenDataConfig(
+        api_key="shared-retry-budget-key",
+        max_retries=2,
+        retry_backoff_seconds=0,
+        general_min_interval_seconds=0,
+        allow_insecure_http=True,
+    )
+    async with (
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client,
+        SeoulOpenDataClient(config=config, http_client=http_client) as client,
+    ):
+        with pytest.raises(SeoulUpstreamError, match="ERROR-500"):
+            await client.traffic_info("link")
+
+    assert calls == 3
+
+
+@pytest.mark.asyncio
 async def test_non_retryable_upstream_error_is_raised(config):
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

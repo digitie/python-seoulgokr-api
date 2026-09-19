@@ -23,6 +23,9 @@
   호출 정책이 충돌하면 limiter가 조용히 분리되지 않고 configuration error를 반환한다.
 - 5xx를 마지막 재시도에서 반환할 때도 upstream `Retry-After`와 상태 코드를
   `SeoulRateLimitError`에 보존한다. 호출자가 다음 backoff를 판단할 수 있어야 한다.
+- `max_retries`는 하나의 논리 호출에 대한 단일 예산으로 관리한다. transport의 HTTP 재시도와
+  client의 HTTP 200 application-level transient 재시도가 각각 전체 예산을 소비하므로,
+  계층을 겹쳐 호출 수가 곱해지지 않는다.
 - application-level `ERROR-337` 또는 명시적인 quota 문구는 자동 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 bounded cooldown을 기록한다.
 - 응답 body는 `max_response_bytes`(기본 16 MiB)로 제한하고, `max_items`는 row를 typed
@@ -37,7 +40,8 @@
   않는다. `quota_timezone`은 credential scope를 분리하는 키가 아니며, 같은 scope에서
   설정이 다르면 명시적인 configuration error를 반환한다.
 - URL canonicalization 후 credential·endpoint scope를 계산해 host 대소문자, 기본 port,
-  trailing slash, dot-segment 같은 표현 차이로 quota가 분리되지 않게 한다.
+  trailing slash, dot-segment, unreserved percent-encoding 같은 표현 차이로 quota가
+  분리되지 않게 한다.
 - transport/client 경계에서 `model_copy(update=...)`로 검증을 우회한 설정도 다시 검증하고,
   호출마다 현재 credential·endpoint·동시성 정책으로 limiter를 재확인한다. 따라서 mutable
   config 변경이 stale limiter를 조용히 재사용하거나 quota를 우회하지 않는다.

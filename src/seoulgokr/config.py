@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 from typing import ClassVar
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,6 +19,11 @@ from pydantic import (
 )
 
 from .errors import SeoulConfigurationError
+
+_PERCENT_ESCAPE = re.compile(r"%([0-9A-Fa-f]{2})")
+_UNRESERVED_PATH_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+)
 
 
 class SeoulOpenDataConfig(BaseModel):
@@ -236,13 +242,25 @@ def validate_base_url(value: str) -> str:
     default_port = 80 if scheme == "http" else 443
     if port is not None and port != default_port:
         netloc = f"{netloc}:{port}"
-    path = posixpath.normpath(parsed.path or "")
+    path = posixpath.normpath(_canonicalize_path(parsed.path or ""))
     if path == ".":
         path = ""
     else:
         path = f"/{path.lstrip('/')}"
         path = path.rstrip("/")
     return f"{scheme}://{netloc}{path}"
+
+
+def _canonicalize_path(path: str) -> str:
+    """동일 의미의 unreserved percent-encoding을 하나의 path로 만든다."""
+
+    def replace(match: re.Match[str]) -> str:
+        value = chr(int(match.group(1), 16))
+        if value in _UNRESERVED_PATH_CHARS:
+            return value
+        return f"%{match.group(1).upper()}"
+
+    return _PERCENT_ESCAPE.sub(replace, path)
 
 
 def _first_env(names: tuple[str, ...]) -> str | None:

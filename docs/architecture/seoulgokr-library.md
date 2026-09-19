@@ -52,3 +52,5 @@ seoulgokr client facade
   `quota_timezone`이 다르면 scope를 조용히 분리하지 않고 설정 충돌로 거부한다.
 - provider는 인증키가 없으면 명확한 configuration error를 내고, 임의의 sample/live
   전환을 하지 않는다.
+- `max_retries`는 transport와 application parser가 공유하는 논리 호출 단위의 bounded
+  budget이며, 재시도 계층마다 별도로 초기화하지 않는다.

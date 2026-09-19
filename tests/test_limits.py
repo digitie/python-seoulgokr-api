@@ -174,6 +174,9 @@ def test_base_url_rejects_embedded_credentials_and_query_secrets(base_url):
         ("https://example.com/api/.", "https://example.com/api"),
         ("https://example.com/api/../api", "https://example.com/api"),
         ("https://example.com/../api", "https://example.com/api"),
+        ("https://example.com/api/%2e%2e/api", "https://example.com/api"),
+        ("https://example.com/%7euser", "https://example.com/~user"),
+        ("https://example.com/%2f/api", "https://example.com/%2F/api"),
     ],
 )
 def test_base_url_canonicalizes_host_default_port_and_path(value, expected):
@@ -334,7 +337,7 @@ def test_shared_registry_does_not_retain_closed_event_loops():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("suffix", ["/", "/."])
+@pytest.mark.parametrize("suffix", ["/", "/.", "/%2e%2e"])
 async def test_canonical_base_url_keeps_shared_quota_scope(suffix):
     calls = 0
 

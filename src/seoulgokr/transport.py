@@ -34,6 +34,21 @@ class TransportResponse:
     request: Mapping[str, str]
 
 
+@dataclass
+class RetryBudget:
+    """논리 호출 전체가 공유하는 bounded retry 예산."""
+
+    remaining: int
+    used: int = 0
+
+    def consume(self) -> bool:
+        if self.remaining <= 0:
+            return False
+        self.remaining -= 1
+        self.used += 1
+        return True
+
+
 class AsyncSeoulTransport:
     """주입 가능한 httpx transport를 사용하는 비동기 HTTP client."""
 
@@ -81,6 +96,7 @@ class AsyncSeoulTransport:
         end_index: int | None = None,
         filter_value: str | None = None,
         include_pagination: bool = True,
+        retry_budget: RetryBudget | None = None,
     ) -> TransportResponse:
         key = None
         base_url = ""
@@ -154,6 +170,7 @@ class AsyncSeoulTransport:
                 self.config.quota_group(service),
                 policy,
                 limiter=self._limiter_for(api),
+                retry_budget=retry_budget,
             )
         finally:
             # Any traceback through this frame must not retain raw path segments.
@@ -217,6 +234,7 @@ class AsyncSeoulTransport:
         policy: RateLimitPolicy,
         *,
         limiter: ServiceRateLimiter,
+        retry_budget: RetryBudget | None = None,
     ) -> TransportResponse:
         last_error: Exception | None = None
         response: httpx.Response | None = None
@@ -226,7 +244,7 @@ class AsyncSeoulTransport:
         network_failure = False
         cancelled = False
         error: SeoulGokrError
-        attempts = self.config.max_retries + 1
+        budget = retry_budget or RetryBudget(self.config.max_retries)
 
         def sanitize_locals() -> None:
             """이 함수의 traceback frame에서 raw request 값을 지운다."""
@@ -241,7 +259,7 @@ class AsyncSeoulTransport:
             url = ""
 
         try:
-            for attempt in range(attempts):
+            while True:
                 try:
                     async with limiter.slot(service, policy):
                         async with asyncio.timeout(self.config.timeout_seconds):
@@ -296,10 +314,10 @@ class AsyncSeoulTransport:
                     break
                 except (TimeoutError, httpx.TransportError) as exc:
                     last_error = exc
-                    if attempt + 1 >= attempts:
+                    if not budget.consume():
                         network_failure = True
                         break
-                    await self._backoff(attempt)
+                    await self._backoff(budget.used - 1)
                     continue
                 if response_status == 429:
                     retry_after = _retry_after_seconds(response_headers)
@@ -325,8 +343,8 @@ class AsyncSeoulTransport:
                         status_code=429,
                         request=request_info,
                     )
-                    if attempt + 1 < attempts:
-                        await self._backoff(attempt, retry_after=retry_after)
+                    if budget.consume():
+                        await self._backoff(budget.used - 1, retry_after=retry_after)
                         continue
                     assert isinstance(last_error, SeoulRateLimitError)
                     error = last_error
@@ -356,8 +374,8 @@ class AsyncSeoulTransport:
                         status_code=response_status,
                         request=request_info,
                     )
-                    if attempt + 1 < attempts:
-                        await self._backoff(attempt, retry_after=retry_after)
+                    if budget.consume():
+                        await self._backoff(budget.used - 1, retry_after=retry_after)
                         continue
                     assert isinstance(last_error, SeoulRateLimitError)
                     error = last_error

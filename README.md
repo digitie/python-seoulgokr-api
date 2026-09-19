@@ -68,6 +68,8 @@ asyncio.run(main())
   `ERROR-500/600/601`도 같은 방식으로 제한 재시도하며, `INFO-200`은 정상적인 빈
   결과로 반환한다. upstream `ERROR-337` 또는 명시적인 quota 문구는 재시도하지 않고
   `upstream_quota_cooldown_seconds`만큼 limiter에 bounded cooldown을 기록한다.
+- `max_retries`는 하나의 논리 호출에서 transport 재시도와 HTTP 200 application-level
+  재시도가 합쳐서 사용하는 단일 예산이다. 계층별로 따로 적용해 호출 수가 곱해지지 않는다.
 - 응답 body는 기본 16 MiB(`max_response_bytes`)에서 읽기를 중단하고, 전체역 등
   caller가 지정한 `max_items` 상한은 typed model을 만들기 전에 적용한다. 페이지 범위와
   `sample` 기능 제한은 application daily quota가 아닌 `SeoulConfigurationError`로

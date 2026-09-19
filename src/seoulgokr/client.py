@@ -35,7 +35,7 @@ from .parsers import (
     parse_traffic_info,
 )
 from .redaction import redact_value
-from .transport import AsyncSeoulTransport, TransportResponse
+from .transport import AsyncSeoulTransport, RetryBudget, TransportResponse
 
 T = TypeVar("T")
 
@@ -312,9 +312,13 @@ class SeoulOpenDataClient:
         """transport 오류와 HTTP 200 application-level 일시 오류를 함께 처리한다."""
 
         response: TransportResponse | None = None
-        for attempt in range(self.config.max_retries + 1):
+        retry_budget = RetryBudget(self.config.max_retries)
+        while True:
             response = await self.transport.request(
-                service=service, api=api, **request_kwargs
+                service=service,
+                api=api,
+                retry_budget=retry_budget,
+                **request_kwargs,
             )
             recursion_error = False
             try:
@@ -344,18 +348,19 @@ class SeoulOpenDataClient:
                         service=service,
                         delay_seconds=self.config.upstream_quota_cooldown_seconds,
                     )
-                if (
-                    quota_error
-                    or not exc.retryable
-                    or attempt >= self.config.max_retries
-                ):
+                if quota_error or not exc.retryable:
+                    response = None
+                    payload = {}
+                    raise
+                retry_attempt = retry_budget.used
+                if not retry_budget.consume():
                     response = None
                     payload = {}
                     raise
                 response = None
                 payload = {}
                 delay = min(
-                    self.config.retry_backoff_seconds * (2**attempt),
+                    self.config.retry_backoff_seconds * (2**retry_attempt),
                     self.config.retry_backoff_max_seconds,
                 )
                 if delay > 0:
@@ -369,7 +374,6 @@ class SeoulOpenDataClient:
                 )
             assert response is not None
             return _result(source_id, service, response, envelope, items)
-        raise RuntimeError("서울 Open API query loop가 예기치 않게 종료되었습니다")
 
     def _secret_values(self) -> tuple[str, ...]:
         """redaction 동안에만 평문 키를 만들고 객체 속성에는 보관하지 않는다."""
